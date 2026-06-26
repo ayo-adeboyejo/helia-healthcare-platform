@@ -26,44 +26,8 @@ class AppointmentNotification(BaseModel):
     notification_type: str  # confirmed | reminder | cancelled
 
 
-def send_email(to: str, subject: str, html: str, text: str = None) -> bool:
-    """
-    Send email.
-    Development: uses Mailhog via SMTP (catches all emails, nothing sent externally)
-    Production:  uses AWS SES
-    """
-    if settings.environment == "development":
-        return _send_via_mailhog(to, subject, html)
-    return _send_via_ses(to, subject, html, text)
-
-
-def _send_via_mailhog(to: str, subject: str, html: str) -> bool:
-    """Send via Mailhog SMTP — dev only. View at http://localhost:8025"""
-    try:
-        import smtplib
-        from email.mime.text import MIMEText
-        from email.mime.multipart import MIMEMultipart
-
-        msg = MIMEMultipart("alternative")
-        msg["From"]    = settings.ses_from_email
-        msg["To"]      = to
-        msg["Subject"] = subject
-        msg.attach(MIMEText(html, "html"))
-
-        with smtplib.SMTP(settings.mail_host, settings.mail_port) as server:
-            server.sendmail(settings.ses_from_email, [to], msg.as_string())
-
-        logger.info(f"email_sent_mailhog to={to} subject={subject}")
-        return True
-    except Exception as e:
-        logger.error(f"mailhog_send_failed to={to} error={e}")
-        # In dev, log the email content so it's never silently lost
-        logger.info(f"[DEV EMAIL FALLBACK] to={to} subject={subject}")
-        return True  # Don't fail in dev even if Mailhog is down
-
-
-def _send_via_ses(to: str, subject: str, html: str, text: str = None) -> bool:
-    """Send via AWS SES — production only."""
+def send_ses_email(to: str, subject: str, html: str, text: str = None) -> bool:
+    """Send email via AWS SES. Authentication via EC2 IAM role — no keys needed."""
     try:
         client = boto3.client("ses", region_name=settings.aws_region)
         body = {"Html": {"Charset": "UTF-8", "Data": html}}
@@ -78,7 +42,7 @@ def _send_via_ses(to: str, subject: str, html: str, text: str = None) -> bool:
                 "Body":    body,
             },
         )
-        logger.info(f"email_sent_ses to={to} subject={subject}")
+        logger.info(f"email_sent to={to} subject={subject}")
         return True
     except ClientError as e:
         logger.error(f"ses_send_failed to={to} error={e.response['Error']['Message']}")
@@ -88,7 +52,7 @@ def _send_via_ses(to: str, subject: str, html: str, text: str = None) -> bool:
 # ── Generic notification ───────────────────────────────────────────────────────
 @router.post("/notifications/send")
 async def send_notification(payload: NotificationRequest):
-    success = send_email(
+    success = send_ses_email(
         to=payload.to_email,
         subject=payload.subject,
         html=payload.body_html,
@@ -139,7 +103,6 @@ async def send_appointment_notification(payload: AppointmentNotification):
                         <p style="margin: 6px 0; color: #92400e;"><strong>🕐 Time:</strong> {payload.appointment_time}</p>
                         <p style="margin: 6px 0; color: #92400e;"><strong>👨‍⚕️ Doctor:</strong> Dr. {payload.doctor_name}</p>
                     </div>
-                    <p style="color: #64748b; font-size: 14px;">See you tomorrow. Log in to Helia if you need to make any changes.</p>
                 </div>
             </div>""",
         },
@@ -164,7 +127,7 @@ async def send_appointment_notification(payload: AppointmentNotification):
     if not template:
         raise HTTPException(status_code=400, detail=f"Unknown notification type: {payload.notification_type}")
 
-    success = send_email(
+    success = send_ses_email(
         to=payload.to_email,
         subject=template["subject"],
         html=template["html"],

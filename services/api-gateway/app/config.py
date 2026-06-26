@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    environment:                 str = "development"
+    environment:                 str = "production"
     log_level:                   str = "info"
     port:                        int = 8000
     redis_host:                  str = "redis"

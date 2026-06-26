@@ -17,7 +17,7 @@ def load_aws_secrets() -> dict:
 
 class Settings(BaseSettings):
     # Application
-    environment:     str = "development"
+    environment:     str = "production"
     log_level:       str = "info"
     port:            int = 8001
     aws_region:      str = "ap-south-1"

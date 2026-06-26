@@ -12,7 +12,7 @@ import sys
 
 
 class Settings(BaseSettings):
-    environment:              str = "development"
+    environment:              str = "production"
     port:                     int = 8000
     redis_host:               str = "redis"
     redis_port:               int = 6379
@@ -63,7 +63,6 @@ ROUTES = {
 PUBLIC_ROUTES = {
     ("POST", "/auth/register"),
     ("POST", "/auth/login"),
-    ("POST", "/auth/verify-email"),
     ("POST", "/auth/forgot-password"),
     ("POST", "/auth/reset-password"),
     ("POST", "/auth/refresh"),

@@ -85,10 +85,10 @@ services:
       dockerfile: Dockerfile
     container_name: helia-auth
     environment:
-      ENVIRONMENT:     ${ENVIRONMENT:-production}
-      LOG_LEVEL:       ${LOG_LEVEL:-info}
-      AWS_REGION:      ${AWS_REGION:-ap-south-1}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+      ENVIRONMENT:     production
+      LOG_LEVEL:       info
+      AWS_REGION:      ap-south-1
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       PORT:            8001
       POSTGRES_HOST:   postgres
       POSTGRES_PORT:   5432
@@ -111,10 +111,10 @@ services:
       dockerfile: Dockerfile
     container_name: helia-user
     environment:
-      ENVIRONMENT:      ${ENVIRONMENT:-production}
-      LOG_LEVEL:        ${LOG_LEVEL:-info}
-      AWS_REGION:       ${AWS_REGION:-ap-south-1}
-      ALLOWED_ORIGINS:  ${ALLOWED_ORIGINS:-*}
+      ENVIRONMENT:      production
+      LOG_LEVEL:        info
+      AWS_REGION:       ap-south-1
+      ALLOWED_ORIGINS:  ${ALLOWED_ORIGINS}
       PORT:             8002
       POSTGRES_HOST:    postgres
       POSTGRES_PORT:    5432
@@ -136,10 +136,10 @@ services:
       dockerfile: Dockerfile
     container_name: helia-appointment
     environment:
-      ENVIRONMENT:              ${ENVIRONMENT:-production}
-      LOG_LEVEL:                ${LOG_LEVEL:-info}
-      AWS_REGION:               ${AWS_REGION:-ap-south-1}
-      ALLOWED_ORIGINS:          ${ALLOWED_ORIGINS:-*}
+      ENVIRONMENT:              production
+      LOG_LEVEL:                info
+      AWS_REGION:               ap-south-1
+      ALLOWED_ORIGINS:          ${ALLOWED_ORIGINS}
       PORT:                     8003
       POSTGRES_HOST:            postgres
       POSTGRES_PORT:            5432
@@ -167,14 +167,14 @@ services:
       dockerfile: Dockerfile
     container_name: helia-notification
     environment:
-      ENVIRONMENT:     ${ENVIRONMENT:-production}
-      LOG_LEVEL:       ${LOG_LEVEL:-info}
-      AWS_REGION:      ${AWS_REGION:-ap-south-1}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+      ENVIRONMENT:     production
+      LOG_LEVEL:       info
+      AWS_REGION:      ap-south-1
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       PORT:            8004
       REDIS_HOST:      redis
       REDIS_PORT:      6379
-      SES_FROM_EMAIL:  ${SES_FROM_EMAIL:-noreply@helia.health}
+      SES_FROM_EMAIL:  ${SES_FROM_EMAIL}
     depends_on:
       redis: { condition: service_healthy }
     networks: [helia-network]
@@ -191,10 +191,10 @@ services:
       dockerfile: Dockerfile
     container_name: helia-payment
     environment:
-      ENVIRONMENT:      ${ENVIRONMENT:-production}
-      LOG_LEVEL:        ${LOG_LEVEL:-info}
-      AWS_REGION:       ${AWS_REGION:-ap-south-1}
-      ALLOWED_ORIGINS:  ${ALLOWED_ORIGINS:-*}
+      ENVIRONMENT:      production
+      LOG_LEVEL:        info
+      AWS_REGION:       ap-south-1
+      ALLOWED_ORIGINS:  ${ALLOWED_ORIGINS}
       PORT:             8005
       POSTGRES_HOST:    postgres
       POSTGRES_PORT:    5432
@@ -216,14 +216,14 @@ services:
       dockerfile: Dockerfile
     container_name: helia-medical-records
     environment:
-      ENVIRONMENT:      ${ENVIRONMENT:-production}
-      LOG_LEVEL:        ${LOG_LEVEL:-info}
-      AWS_REGION:       ${AWS_REGION:-ap-south-1}
-      ALLOWED_ORIGINS:  ${ALLOWED_ORIGINS:-*}
+      ENVIRONMENT:      production
+      LOG_LEVEL:        info
+      AWS_REGION:       ap-south-1
+      ALLOWED_ORIGINS:  ${ALLOWED_ORIGINS}
       PORT:             8006
       MONGO_HOST:       mongodb
       MONGO_PORT:       27017
-      S3_BUCKET:        ${S3_BUCKET:-helia-files}
+      S3_BUCKET:        helia-files
       AUTH_SERVICE_URL: http://auth-service:8001
     depends_on:
       mongodb:      { condition: service_healthy }
@@ -242,10 +242,10 @@ services:
       dockerfile: Dockerfile
     container_name: helia-search
     environment:
-      ENVIRONMENT:        ${ENVIRONMENT:-production}
-      LOG_LEVEL:          ${LOG_LEVEL:-info}
-      AWS_REGION:         ${AWS_REGION:-ap-south-1}
-      ALLOWED_ORIGINS:    ${ALLOWED_ORIGINS:-*}
+      ENVIRONMENT:        production
+      LOG_LEVEL:          info
+      AWS_REGION:         ap-south-1
+      ALLOWED_ORIGINS:    ${ALLOWED_ORIGINS}
       PORT:               8007
       ELASTICSEARCH_HOST: elasticsearch
       ELASTICSEARCH_PORT: 9200
@@ -266,8 +266,8 @@ services:
       dockerfile: Dockerfile
     container_name: helia-gateway
     environment:
-      ENVIRONMENT:                 ${ENVIRONMENT:-production}
-      LOG_LEVEL:                   ${LOG_LEVEL:-info}
+      ENVIRONMENT:                 production
+      LOG_LEVEL:                   info
       PORT:                        8000
       REDIS_HOST:                  redis
       REDIS_PORT:                  6379

@@ -1,297 +1,422 @@
 # Helia — Containerised Healthcare Appointment Booking Platform
 
-> **Using Docker Compose, FastAPI & Polyglot Persistence**
+> **Using Docker Compose, FastAPI, Polyglot Persistence and AWS**
 
-A production-pattern microservices healthcare platform demonstrating end-to-end containerisation, cloud deployment, and DevOps best practices. Built as a portfolio project — runs locally without any cloud accounts, and deploys to AWS with full managed service integration.
+A production-grade microservices healthcare platform deployed on AWS EC2, demonstrating end-to-end containerisation, cloud integration, and DevOps best practices.
 
 ---
 
 ## Architecture
 
 ```
-                          ┌─────────────────────────────────────┐
-                          │  Docker network: helia-network       │
-                          │                                      │
-Browser → nginx :80 ─────►│  frontend (React + nginx)           │
-                          │         │ /api/*                     │
-                          │         ▼                            │
-                          │  api-gateway :8000                   │
-                          │    │    │    │    │    │    │        │
-                          │    ▼    ▼    ▼    ▼    ▼    ▼       │
-                          │  auth  user appt  pay  med  srch    │
-                          │  8001  8002 8003  8005 8006 8007    │
-                          │    │         │         │    │        │
-                          │    ▼         ▼         ▼    ▼       │
-                          │  PostgreSQL  Redis  MongoDB  ES      │
-                          └─────────────────────────────────────┘
+Internet
+    │
+    ▼ port 80
+EC2 Security Group (helia-sg)
+    │
+    ▼
+EC2 t3.medium — Ubuntu 22.04 — Elastic IP
+    │
+    ▼
+Docker Engine
+    │
+    ▼
+nginx :80 (only public-facing container)
+    │
+    ├──► frontend :3000 (React)
+    │
+    └──► api-gateway :8000
+              │
+              ├── auth-service        :8001  → PostgreSQL (authdb)   + Redis
+              ├── user-service        :8002  → PostgreSQL (userdb)
+              ├── appointment-service :8003  → PostgreSQL (appointmentdb) + Redis
+              ├── notification-service:8004  → AWS SES
+              ├── payment-service     :8005  → PostgreSQL (paymentdb)
+              ├── medical-records-svc :8006  → MongoDB + AWS S3
+              └── search-service      :8007  → Elasticsearch
 ```
 
-### Services
-
-| Service | Port | Technology | Database |
-|---------|------|------------|----------|
-| auth-service | 8001 | FastAPI | PostgreSQL + Redis |
-| user-service | 8002 | FastAPI | PostgreSQL |
-| appointment-service | 8003 | FastAPI | PostgreSQL + Redis |
-| notification-service | 8004 | FastAPI | — (SES / Mailhog) |
-| payment-service | 8005 | FastAPI | PostgreSQL |
-| medical-records-service | 8006 | FastAPI | MongoDB + S3/MinIO |
-| search-service | 8007 | FastAPI | Elasticsearch |
-| api-gateway | 8000 | FastAPI | Redis |
-| frontend | — | React + nginx | — |
-
-### Data stores
-
-| Store | Purpose |
-|-------|---------|
-| PostgreSQL | Auth, users, appointments, payments (relational, ACID) |
-| MongoDB | Medical records, prescriptions (flexible schema) |
-| Elasticsearch | Doctor search and discovery (full-text, filters) |
-| Redis | Token blacklist, slot locking, rate limiting, caching |
-| S3 / MinIO | Document and file storage |
+All services communicate on an internal Docker bridge network (`helia-network`). Only nginx is exposed to the internet on port 80. No service ports are accessible from outside the EC2 instance.
 
 ---
 
-## Running locally (no AWS account needed)
+## Tech stack
 
-### Prerequisites
-
-- Docker Desktop installed and running
-- Git
-
-### Quick start
-
-```bash
-# Clone the repository
-git clone https://github.com/YOUR_USERNAME/helia.git
-cd helia
-
-# Copy environment file (safe defaults included)
-make setup
-# or: cp .env.example .env
-
-# Start everything
-make dev
-# or: docker compose up --build
-```
-
-That's it. Docker pulls all images and starts every service automatically.
-
-### What runs in development
-
-```
-MinIO     → replaces AWS S3 for file storage
-Mailhog   → catches all emails (nothing sent to real inboxes)
-.env file → replaces AWS Secrets Manager for credentials
-```
-
-No AWS account, no cloud credentials, no configuration needed beyond the `.env` file.
-
-### Access points (development)
-
-| URL | What |
-|-----|------|
-| http://localhost | Helia web application |
-| http://localhost:8025 | Mailhog — view all caught emails |
-| http://localhost:9001 | MinIO console — view uploaded files |
-| http://localhost:8000/docs | API Gateway — Swagger UI |
-| http://localhost:8001/docs | Auth Service — Swagger UI |
-| http://localhost:8002/docs | User Service — Swagger UI |
-| http://localhost:8003/docs | Appointment Service — Swagger UI |
-| http://localhost:8005/docs | Payment Service — Swagger UI |
-| http://localhost:8006/docs | Medical Records Service — Swagger UI |
-| http://localhost:8007/docs | Search Service — Swagger UI |
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| Application | Python FastAPI | All microservices |
+| Orchestration | Docker Compose | Container management |
+| Reverse proxy | nginx | Single entry point, request routing |
+| Relational DB | PostgreSQL 15 | Auth, users, appointments, payments |
+| Document DB | MongoDB 7 | Medical records, prescriptions |
+| Search engine | Elasticsearch 8 | Doctor discovery and filtering |
+| Cache / queue | Redis 7 | Token blacklist, slot locking, rate limiting |
+| File storage | Amazon S3 | Medical documents, uploads |
+| Email | Amazon SES | Appointment notifications |
+| Secrets | AWS Secrets Manager | All credentials, encrypted at rest |
+| Compute | AWS EC2 t3.medium | Ubuntu 22.04 LTS |
+| Identity | AWS IAM role | EC2 instance profile, no access keys |
 
 ---
 
-## Deploying to AWS
+## AWS infrastructure required
 
-### Prerequisites
+Before deploying the application, the following AWS resources must exist:
 
-- AWS account
-- EC2 instance — t3.medium, Ubuntu 22.04 LTS
-- Elastic IP attached to the instance
-- IAM role with `AmazonS3FullAccess` and `SecretsManagerReadWrite` attached to EC2
-- AWS Secrets Manager secret named `helia/production`
-- S3 bucket named `helia-files`
-- Docker and Docker Compose installed on EC2
+### 1. EC2 instance
 
-### Step 1 — Create the secret in AWS Secrets Manager
+- Instance type: **t3.medium** (2 vCPU, 4GB RAM)
+- AMI: **Ubuntu Server 22.04 LTS**
+- Storage: **20 GiB gp3**
+- User data: creates `helia_adm` user with SSH access on first boot
 
-In the AWS Console → Secrets Manager → Store a new secret → Other type → Plaintext:
+### 2. Elastic IP
+
+Allocate a static Elastic IP and attach it to the instance. This ensures the IP address never changes when the instance stops and starts.
+
+### 3. Security group (`helia-sg`)
+
+| Type | Protocol | Port | Source | Purpose |
+|------|----------|------|--------|---------|
+| SSH | TCP | 22 | Your IP only | Administration |
+| HTTP | TCP | 80 | 0.0.0.0/0 | Web traffic |
+| HTTPS | TCP | 443 | 0.0.0.0/0 | Secure web traffic (future) |
+
+### 4. IAM role (`helia-ec2-role`)
+
+Create an IAM role with the following managed policies and attach it to the EC2 instance:
+
+- `AmazonS3FullAccess`
+- `SecretsManagerReadWrite`
+
+The application authenticates with AWS entirely through this role — no access keys are stored anywhere.
+
+### 5. AWS Secrets Manager
+
+Create a secret named **`helia/production`** in region **`ap-south-1`** (Mumbai).
+
+Secret type: **Other type of secret → Plaintext**
 
 ```json
 {
   "postgres_user":                   "helia",
-  "postgres_password":               "STRONG_PASSWORD",
+  "postgres_password":               "GENERATE_STRONG_PASSWORD",
   "postgres_auth_db":                "authdb",
   "postgres_user_db":                "userdb",
   "postgres_appointment_db":         "appointmentdb",
   "postgres_payment_db":             "paymentdb",
   "mongo_user":                      "helia",
-  "mongo_password":                  "STRONG_PASSWORD",
+  "mongo_password":                  "GENERATE_STRONG_PASSWORD",
   "mongo_db":                        "helia_records",
-  "redis_password":                  "STRONG_PASSWORD",
+  "redis_password":                  "GENERATE_STRONG_PASSWORD",
   "elastic_username":                "elastic",
-  "elastic_password":                "STRONG_PASSWORD",
-  "jwt_secret":                      "VERY_LONG_RANDOM_STRING_64_CHARS_MINIMUM",
+  "elastic_password":                "GENERATE_STRONG_PASSWORD",
+  "jwt_secret":                      "GENERATE_64_CHARACTER_RANDOM_STRING",
   "jwt_algorithm":                   "HS256",
   "jwt_access_token_expire_minutes": "60",
   "jwt_refresh_token_expire_days":   "7"
 }
 ```
 
-Name the secret: `helia/production`
+Generate strong passwords on the EC2 instance:
 
-### Step 2 — Prepare the .env file on EC2
+```bash
+# Generate a strong password (run once per password)
+openssl rand -base64 32
 
-SSH into your EC2 instance and create the `.env` file:
+# Generate the JWT secret (must be long)
+openssl rand -base64 64
+```
+
+### 6. S3 bucket (`helia-files`)
+
+Create an S3 bucket in `ap-south-1` with:
+
+- **Block all public access:** enabled
+- **Versioning:** enabled
+- **Server-side encryption:** SSE-S3
+- **Bucket policy:** deny unencrypted connections, allow only `helia-ec2-role`
+
+Folder structure inside the bucket:
+
+```
+helia-files/
+├── prescriptions/
+├── lab-results/
+├── consultation-notes/
+└── profile-images/
+```
+
+---
+
+## Deploying to EC2
+
+### Step 1 — Install Docker on the EC2 instance
+
+SSH in as `helia_adm`:
 
 ```bash
 ssh -i your-key.pem helia_adm@<elastic-ip>
-cd /opt/helia
+```
 
-# Clone the repository
-git clone https://github.com/YOUR_USERNAME/helia.git .
+Install Docker:
 
-# Create production .env
+```bash
+# Update packages
+sudo apt-get update -y
+
+# Install Docker
+curl -fsSL https://get.docker.com | sudo sh
+
+# Add helia_adm to docker group
+sudo usermod -aG docker helia_adm
+
+# Start and enable Docker
+sudo systemctl start docker
+sudo systemctl enable docker
+
+# Log out and back in for group change to take effect
+exit
+ssh -i your-key.pem helia_adm@<elastic-ip>
+
+# Verify
+docker --version
+```
+
+Install Docker Compose:
+
+```bash
+sudo curl -SL https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-x86_64 \
+  -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+docker-compose --version
+```
+
+Set Elasticsearch memory requirement:
+
+```bash
+echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+```
+
+### Step 2 — Install AWS CLI
+
+```bash
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+sudo apt-get install -y unzip
+unzip /tmp/awscliv2.zip -d /tmp
+sudo /tmp/aws/install
+rm -rf /tmp/awscliv2.zip /tmp/aws
+
+# Verify IAM role is attached
+aws sts get-caller-identity
+```
+
+You should see your account ID and the `helia-ec2-role` ARN. If this fails, the IAM role is not attached — go to EC2 → Actions → Security → Modify IAM role.
+
+### Step 3 — Clone the repository
+
+```bash
+cd /opt
+sudo mkdir helia
+sudo chown helia_adm:helia_adm helia
+git clone https://github.com/YOUR_USERNAME/helia-microservices-healthcare-platform.git helia
+cd helia
+```
+
+### Step 4 — Generate the .env file from AWS Secrets Manager
+
+Docker Compose needs database passwords to initialise PostgreSQL, MongoDB, Redis and Elasticsearch. These passwords live in AWS Secrets Manager. The following command fetches them and appends them to the `.env` file:
+
+```bash
+# First copy the non-sensitive config template
 cp .env.example .env
-nano .env
+
+# Fetch secrets from AWS Secrets Manager and append to .env
+aws secretsmanager get-secret-value \
+    --secret-id "helia/production" \
+    --region "ap-south-1" \
+    --query "SecretString" \
+    --output text | python3 -c "
+import sys, json
+s = json.load(sys.stdin)
+print(f'POSTGRES_PASSWORD={s[\"postgres_password\"]}')
+print(f'MONGO_PASSWORD={s[\"mongo_password\"]}')
+print(f'REDIS_PASSWORD={s[\"redis_password\"]}')
+print(f'ELASTIC_PASSWORD={s[\"elastic_password\"]}')
+" >> .env
 ```
 
-Set these values in `.env`:
+Verify the `.env` file has been populated:
 
 ```bash
-ENVIRONMENT=production
-AWS_REGION=ap-south-1
-S3_BUCKET=helia-files
-ALLOWED_ORIGINS=http://<your-elastic-ip>
-
-# These come from AWS Secrets Manager but are also
-# needed by docker-compose.yml to initialise databases
-POSTGRES_USER=helia
-POSTGRES_PASSWORD=<same as in Secrets Manager>
-POSTGRES_AUTH_DB=authdb
-POSTGRES_USER_DB=userdb
-POSTGRES_APPOINTMENT_DB=appointmentdb
-POSTGRES_PAYMENT_DB=paymentdb
-MONGO_USER=helia
-MONGO_PASSWORD=<same as in Secrets Manager>
-MONGO_DB=helia_records
-REDIS_PASSWORD=<same as in Secrets Manager>
-ELASTIC_PASSWORD=<same as in Secrets Manager>
+cat .env
 ```
 
-### Step 3 — Deploy
+You should see all values filled in — no empty passwords.
+
+> The `.env` file is listed in `.gitignore` and is never committed to the repository. It exists only on the EC2 instance.
+
+### Step 5 — Build and start all containers
 
 ```bash
-# Production mode — uses only docker-compose.yml
-# No MinIO, no Mailhog, no exposed ports except nginx on 80
-make prod
-# or: docker compose -f docker-compose.yml up --build -d
+docker compose up --build -d
 ```
 
-### Step 4 — Verify
+Docker Compose reads `docker-compose.yml` and the `.env` file, builds all service images, and starts every container in the correct order — infrastructure first, then application services, then nginx. The `--build` flag ensures fresh images are built from the current code. The `-d` flag runs everything in the background.
+
+### Step 6 — Verify
 
 ```bash
-# Check all containers are running
-make ps
+# Check all containers are running and healthy
+docker compose ps
 
 # Stream logs
-make prod-logs
+docker compose logs -f
 
-# Test the API
+# Test the application
 curl http://<elastic-ip>/api/health
 ```
 
----
+Expected response:
 
-## Environment switching — how it works
-
-The codebase detects the environment at startup and behaves accordingly:
-
-```
-ENVIRONMENT=development
-  └── Reads credentials from .env file
-  └── S3 requests go to MinIO (http://minio:9000)
-  └── Emails go to Mailhog (SMTP on port 1025)
-  └── All service ports exposed on host
-  └── Debug logging enabled
-
-ENVIRONMENT=production
-  └── Reads credentials from AWS Secrets Manager
-  └── S3 requests go to real AWS S3 (via IAM role, no keys needed)
-  └── Emails sent via AWS SES
-  └── No ports exposed except nginx on 80
-  └── Info logging only
+```json
+{
+  "status": "ok",
+  "service": "api-gateway",
+  "version": "1.0.0"
+}
 ```
 
-Same codebase, same Docker images, same `docker compose up` command. Only the environment variable changes.
+Open `http://<elastic-ip>` in your browser to access the Helia web application.
 
 ---
 
-## Project structure
+## How secrets management works
 
 ```
-helia/
-├── docker-compose.yml           # Production — AWS services, locked down ports
-├── docker-compose.override.yml  # Development additions — MinIO, Mailhog, exposed ports
-├── Makefile                     # Simple commands: make dev, make prod, make down
-├── .env.example                 # Template with safe local defaults — commit this
-├── .env                         # Your actual values — never commit this
-├── nginx/
-│   └── nginx.conf               # Reverse proxy config
-├── scripts/
-│   ├── init-postgres.sh         # Creates all 4 databases on first boot
-│   └── seed.sh                  # Seeds test data (optional)
-├── frontend/                    # React app served by nginx
-└── services/
-    ├── auth-service/            # FastAPI — registration, login, JWT
-    ├── user-service/            # FastAPI — patient and doctor profiles
-    ├── appointment-service/     # FastAPI — booking, slots, waitlist
-    ├── notification-service/    # FastAPI — email via SES or Mailhog
-    ├── payment-service/         # FastAPI — fees, invoices, earnings
-    ├── medical-records-service/ # FastAPI — records, documents, S3
-    ├── search-service/          # FastAPI — Elasticsearch doctor search
-    └── api-gateway/             # FastAPI — routing, auth, rate limiting
+AWS Secrets Manager (helia/production)
+      │
+      │  aws secretsmanager get-secret-value
+      │  (authenticated via EC2 IAM role — no access keys)
+      ▼
+Passwords written to .env on EC2 instance
+      │
+      ▼
+docker compose up --build -d
+      │
+      ├──► postgres container
+      │      reads POSTGRES_PASSWORD from .env
+      │      creates database user on first boot
+      │
+      ├──► mongodb container
+      │      reads MONGO_PASSWORD from .env
+      │      creates root user on first boot
+      │
+      └──► application services start
+             each service calls Secrets Manager independently
+             loads jwt_secret, passwords etc. into memory at startup
+             credentials never written to application logs or disk
+```
+
+The `.env` file exists only on the EC2 instance and is never committed to git. It must be regenerated from Secrets Manager whenever passwords rotate or the instance is reprovisioned.
+
+---
+
+## Updating the application
+
+On subsequent deployments:
+
+```bash
+cd /opt/helia
+
+# Pull latest code
+git pull origin main
+
+# Regenerate .env from Secrets Manager (passwords may have rotated)
+aws secretsmanager get-secret-value \
+    --secret-id "helia/production" \
+    --region "ap-south-1" \
+    --query "SecretString" \
+    --output text | python3 -c "
+import sys, json
+s = json.load(sys.stdin)
+print(f'POSTGRES_PASSWORD={s[\"postgres_password\"]}')
+print(f'MONGO_PASSWORD={s[\"mongo_password\"]}')
+print(f'REDIS_PASSWORD={s[\"redis_password\"]}')
+print(f'ELASTIC_PASSWORD={s[\"elastic_password\"]}')
+" > /tmp/secrets.env
+
+# Merge with non-sensitive config
+cp .env.example .env
+cat /tmp/secrets.env >> .env
+rm /tmp/secrets.env
+
+# Rebuild and restart containers
+docker compose down
+docker compose up --build -d
 ```
 
 ---
 
-## Key DevOps concepts demonstrated
+## Common operations
 
-| Concept | Implementation |
-|---------|----------------|
-| Containerisation | Docker multi-stage builds for all services |
-| Multi-service orchestration | Docker Compose with health checks and dependency ordering |
-| Polyglot persistence | PostgreSQL, MongoDB, Elasticsearch, Redis, S3 — each chosen for the right reason |
-| Environment parity | Same code runs locally and in production via environment switching |
-| Secrets management | AWS Secrets Manager in production, .env in development |
-| Cloud storage | AWS S3 (production) / MinIO (development) via same boto3 API |
-| Managed email | AWS SES (production) / Mailhog (development) |
-| Reverse proxy | nginx routing frontend and proxying /api/* to gateway |
-| Network isolation | All services on internal Docker network, only nginx exposed |
-| Health checks | Per-service Docker health checks with proper startup ordering |
-| Structured logging | JSON to stdout on every service — CloudWatch-ready |
-| Rate limiting | Redis-backed per-IP rate limiting in API gateway |
-| Atomic operations | Redis slot locking prevents double appointment bookings |
-| IAM role auth | EC2 instance role — no access keys in code or on disk |
+```bash
+# View all container statuses
+docker compose ps
+
+# Stream all logs
+docker compose logs -f
+
+# Stream logs for a specific service
+docker compose logs -f auth-service
+
+# Stop the application
+docker compose down
+
+# Restart the application (no rebuild)
+docker compose up -d
+
+# Full restart with rebuild
+docker compose down && docker compose up --build -d
+
+# Remove all containers and data (irreversible)
+docker compose down -v --remove-orphans
+```
+
+---
+
+## Services and ports (internal only)
+
+All ports below are internal to the Docker network. They are not accessible from the internet.
+
+| Service | Internal port | Database |
+|---------|--------------|----------|
+| api-gateway | 8000 | Redis |
+| auth-service | 8001 | PostgreSQL (authdb) + Redis |
+| user-service | 8002 | PostgreSQL (userdb) |
+| appointment-service | 8003 | PostgreSQL (appointmentdb) + Redis |
+| notification-service | 8004 | AWS SES |
+| payment-service | 8005 | PostgreSQL (paymentdb) |
+| medical-records-service | 8006 | MongoDB + AWS S3 |
+| search-service | 8007 | Elasticsearch |
 
 ---
 
 ## API reference
 
-All requests go through the gateway at `http://localhost:8000` (dev) or `http://<ip>/api` (prod via nginx).
+All requests go through nginx on port 80 and are proxied to the api-gateway at `/api/*`.
+
+Base URL: `http://<elastic-ip>/api`
 
 ### Auth
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | /auth/register | — | Register new user |
-| POST | /auth/login | — | Login, returns JWT |
+| POST | /auth/register | — | Register patient or doctor |
+| POST | /auth/login | — | Login, returns JWT tokens |
 | POST | /auth/refresh | — | Refresh access token |
 | POST | /auth/logout | ✅ | Logout, blacklists token |
 | POST | /auth/reset-password | — | Reset password with token |
-| POST | /auth/verify-token | — | Internal token verification |
 | GET | /auth/me | ✅ | Get current user |
 
 ### Users
@@ -321,7 +446,7 @@ All requests go through the gateway at `http://localhost:8000` (dev) or `http://
 ### Payments
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | /payments | ✅ | Create payment |
+| POST | /payments | ✅ | Create payment record |
 | PUT | /payments/:id/confirm | ✅ | Confirm payment |
 | GET | /payments | ✅ | My payments |
 | GET | /payments/invoices | ✅ | My invoices |
@@ -338,23 +463,36 @@ All requests go through the gateway at `http://localhost:8000` (dev) or `http://
 | POST | /medical-records/notes | ✅ Doctor | Create consultation note |
 | GET | /medical-records/notes/:patient_id | ✅ | Get consultation notes |
 | POST | /medical-records/documents/upload | ✅ | Upload document to S3 |
-| GET | /medical-records/documents/:document_id/download | ✅ | Get pre-signed download URL |
+| GET | /medical-records/documents/:id/download | ✅ | Get pre-signed S3 download URL |
 
 ### Search
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | /search/doctors | — | Search doctors |
+| GET | /search/doctors | — | Search doctors (full-text + filters) |
 | GET | /search/doctors/autocomplete | — | Autocomplete doctor names |
-| POST | /search/doctors/index | — | Index a doctor |
+| POST | /search/doctors/index | — | Index a doctor in Elasticsearch |
 
 ---
 
-## Stopping and cleaning up
+## DevOps concepts demonstrated
 
-```bash
-# Stop all containers (data preserved)
-make down
-
-# Stop and delete all data (WARNING — irreversible)
-make clean
-```
+| Concept | Implementation |
+|---------|----------------|
+| Containerisation | Docker with multi-stage builds |
+| Multi-service orchestration | Docker Compose with health checks and dependency ordering |
+| Microservices architecture | 8 independent FastAPI services, each owning its own database |
+| Polyglot persistence | PostgreSQL, MongoDB, Elasticsearch, Redis — each chosen for the right reason |
+| Cloud deployment | AWS EC2 t3.medium, Ubuntu 22.04 |
+| Static IP management | AWS Elastic IP |
+| Secrets management | AWS Secrets Manager — credentials never on disk or in code |
+| IAM role authentication | EC2 instance profile — no access keys anywhere |
+| Object storage | AWS S3 with pre-signed URLs, SSE encryption, bucket policy |
+| Managed email | AWS SES for appointment notifications |
+| Network isolation | Internal Docker bridge network — only nginx on port 80 exposed |
+| Reverse proxy | nginx routing frontend and proxying /api/* to gateway |
+| Health checks | Per-service Docker health checks with proper startup ordering |
+| Structured logging | JSON to stdout on every service — CloudWatch ready |
+| Rate limiting | Redis-backed per-IP rate limiting in API gateway |
+| Atomic slot locking | Redis prevents double appointment bookings |
+| Token security | JWT blacklisting in Redis on logout |
+| Secrets bootstrap | AWS CLI fetches Secrets Manager values into .env before containers start |

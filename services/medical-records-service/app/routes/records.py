@@ -21,18 +21,10 @@ def utcnow():
 
 def get_s3_client():
     """
-    Returns an S3 client.
-    Development: points to MinIO (local S3-compatible storage)
-    Production:  points to real AWS S3, authenticated via IAM role
+    Returns an AWS S3 client.
+    Authentication handled automatically by the EC2 IAM role.
+    No access keys required in code or on disk.
     """
-    if settings.using_minio:
-        return boto3.client(
-            "s3",
-            endpoint_url=settings.s3_endpoint,
-            aws_access_key_id=settings.s3_access_key,
-            aws_secret_access_key=settings.s3_secret_key,
-            region_name="us-east-1",
-        )
     return boto3.client("s3", region_name=settings.aws_region)
 
 

@@ -16,22 +16,14 @@ def load_aws_secrets() -> dict:
 
 
 class Settings(BaseSettings):
-    environment:     str = "development"
     log_level:       str = "info"
     port:            int = 8004
     aws_region:      str = "ap-south-1"
     allowed_origins: str = "*"
-
-    # Production email (AWS SES)
     ses_from_email:  str = "noreply@helia.health"
-
-    # Development email (Mailhog)
-    mail_host: str = "mailhog"
-    mail_port: int = 1025
-
-    redis_host:     str = "redis"
-    redis_port:     int = 6379
-    redis_password: str = ""
+    redis_host:      str = "redis"
+    redis_port:      int = 6379
+    redis_password:  str = ""
 
     @property
     def redis_url(self) -> str:
@@ -45,13 +37,11 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     base = Settings()
-    if base.environment == "production":
-        s = load_aws_secrets()
-        return Settings(**{
-            **base.model_dump(),
-            "redis_password": s.get("redis_password", ""),
-        })
-    return base
+    s = load_aws_secrets()
+    return Settings(**{
+        **base.model_dump(),
+        "redis_password": s.get("redis_password", ""),
+    })
 
 
 settings = get_settings()
