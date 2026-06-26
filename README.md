@@ -82,7 +82,7 @@ Allocate a static Elastic IP and attach it to the instance. This ensures the IP 
 | HTTP | TCP | 80 | 0.0.0.0/0 | Web traffic |
 | HTTPS | TCP | 443 | 0.0.0.0/0 | Secure web traffic (future) |
 
-### 4. IAM role (`helia-ec2-role`)
+### 4. IAM role (`helia-s3-secretManager-access`)
 
 Create an IAM role with the following managed policies and attach it to the EC2 instance:
 
@@ -135,7 +135,7 @@ Create an S3 bucket in `ap-south-1` with:
 - **Block all public access:** enabled
 - **Versioning:** enabled
 - **Server-side encryption:** SSE-S3
-- **Bucket policy:** deny unencrypted connections, allow only `helia-ec2-role`
+- **Bucket policy:** deny unencrypted connections, allow only `helia-s3-secretManager-access`
 
 Folder structure inside the bucket:
 
@@ -212,7 +212,7 @@ rm -rf /tmp/awscliv2.zip /tmp/aws
 aws sts get-caller-identity
 ```
 
-You should see your account ID and the `helia-ec2-role` ARN. If this fails, the IAM role is not attached — go to EC2 → Actions → Security → Modify IAM role.
+You should see your account ID and the `helia-s3-secretManager-access` ARN. If this fails, the IAM role is not attached — go to EC2 → Actions → Security → Modify IAM role.
 
 ### Step 3 — Clone the repository
 
@@ -220,7 +220,7 @@ You should see your account ID and the `helia-ec2-role` ARN. If this fails, the 
 cd /opt
 sudo mkdir helia
 sudo chown helia_adm:helia_adm helia
-git clone https://github.com/YOUR_USERNAME/helia-microservices-healthcare-platform.git helia
+git clone https://github.com/ayo-adeboyejo/helia-healthcare-platform.git helia
 cd helia
 ```
 
