@@ -34,8 +34,11 @@ class Settings(BaseSettings):
 
     @property
     def mongo_url(self) -> str:
+        from urllib.parse import quote_plus
+        user     = quote_plus(self.mongo_user)
+        password = quote_plus(self.mongo_password)
         return (
-            f"mongodb://{self.mongo_user}:{self.mongo_password}"
+            f"mongodb://{user}:{password}"
             f"@{self.mongo_host}:{self.mongo_port}/{self.mongo_db}?authSource=admin"
         )
 
