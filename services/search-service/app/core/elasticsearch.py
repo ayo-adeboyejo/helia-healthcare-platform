@@ -7,13 +7,22 @@ DOCTORS_INDEX = "helia_doctors"
 
 async def init_elasticsearch():
     global es_client
-    kwargs = {"hosts": [settings.elasticsearch_url]}
-    if settings.elastic_password:
-        kwargs["basic_auth"] = (settings.elastic_username, settings.elastic_password)
 
-    es_client = AsyncElasticsearch(**kwargs)
+    # Elasticsearch 8.x Python client defaults to HTTPS.
+    # Our container runs xpack.security over plain HTTP — no TLS cert configured.
+    # We pass the URL with explicit http:// scheme and disable SSL verification
+    # to force plain HTTP connections.
+    es_client = AsyncElasticsearch(
+        hosts=[settings.elasticsearch_url],
+        basic_auth=(settings.elastic_username, settings.elastic_password),
+        verify_certs=False,
+        ssl_show_warn=False,
+    )
 
-    # Create doctors index with mapping if it doesn't exist
+    # Verify connection before proceeding
+    await es_client.info()
+
+    # Create doctors index with mapping if it does not exist
     if not await es_client.indices.exists(index=DOCTORS_INDEX):
         await es_client.indices.create(
             index=DOCTORS_INDEX,
