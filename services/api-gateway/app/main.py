@@ -1,40 +1,13 @@
 import httpx
-import json
+import logging
+import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic_settings import BaseSettings
-from functools import lru_cache
 import redis.asyncio as aioredis
-import logging
-import sys
 
-
-class Settings(BaseSettings):
-    environment:              str = "production"
-    port:                     int = 8000
-    redis_host:               str = "redis"
-    redis_port:               int = 6379
-    redis_password:           str
-    auth_service_url:         str = "http://auth-service:8001"
-    user_service_url:         str = "http://user-service:8002"
-    appointment_service_url:  str = "http://appointment-service:8003"
-    notification_service_url: str = "http://notification-service:8004"
-    payment_service_url:      str = "http://payment-service:8005"
-    medical_records_service_url: str = "http://medical-records-service:8006"
-    search_service_url:       str = "http://search-service:8007"
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
-
-
-@lru_cache()
-def get_settings():
-    return Settings()
-
-settings = get_settings()
+from app.config import settings
 
 # Logger
 logger = logging.getLogger("api-gateway")
@@ -59,7 +32,7 @@ ROUTES = {
     "/search":          settings.search_service_url,
 }
 
-# Routes that don't require authentication
+# Routes that do not require authentication
 PUBLIC_ROUTES = {
     ("POST", "/auth/register"),
     ("POST", "/auth/login"),
@@ -77,8 +50,9 @@ PUBLIC_ROUTES = {
 async def lifespan(app: FastAPI):
     global redis_client
     redis_client = aioredis.from_url(
-        f"redis://:{settings.redis_password}@{settings.redis_host}:{settings.redis_port}/1",
-        encoding="utf-8", decode_responses=True,
+        settings.redis_url,
+        encoding="utf-8",
+        decode_responses=True,
     )
     yield
     await redis_client.close()
@@ -118,8 +92,8 @@ async def rate_limit(client_ip: str, path: str) -> bool:
     key = f"rate:{client_ip}:{path}"
     count = await redis_client.incr(key)
     if count == 1:
-        await redis_client.expire(key, 60)  # 60 second window
-    return count > 100  # 100 requests per minute per IP
+        await redis_client.expire(key, 60)
+    return count > 100
 
 
 @app.middleware("http")
@@ -127,7 +101,6 @@ async def gateway_middleware(request: Request, call_next):
     path   = request.url.path
     method = request.method
 
-    # Skip gateway logic for health check
     if path == "/health":
         return await call_next(request)
 
@@ -201,5 +174,6 @@ async def health():
     return {
         "status":   "ok",
         "service":  "api-gateway",
+        "version":  "1.0.0",
         "services": {k: v for k, v in ROUTES.items()},
     }
