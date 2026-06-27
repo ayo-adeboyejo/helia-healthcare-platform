@@ -399,8 +399,8 @@ function AuthPage({ mode, setPage }) {
         setPage('dashboard');
       } else {
         await authAPI.register(form);
-        toast('Account created! Check your email to verify.');
-        setPage('verify-email');
+        toast('Account created! You can now sign in.');
+        setPage('login');
       }
     } catch (err) {
       const detail = err.response?.data?.detail;
@@ -470,48 +470,6 @@ function AuthPage({ mode, setPage }) {
   );
 }
 
-/* ─── Verify email page ──────────────────────────────────────────────────── */
-function VerifyEmailPage({ setPage }) {
-  const toast = useToast();
-  const [code, setCode]     = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleVerify = async () => {
-    setLoading(true);
-    try {
-      await authAPI.verifyEmail({ token: code });
-      toast('Email verified! You can now sign in.');
-      setPage('login');
-    } catch (err) {
-      toast(err.response?.data?.detail || 'Invalid code', 'error');
-    } finally { setLoading(false); }
-  };
-
-  return (
-    <div style={{ minHeight: 'calc(100vh - 64px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div className="card fade-up" style={{ padding: '40px 44px', width: '100%', maxWidth: 420, textAlign: 'center' }}>
-        <div style={{ fontSize: 52, marginBottom: 16 }}>📧</div>
-        <h2 style={{ fontSize: 26, marginBottom: 8 }}>Verify your email</h2>
-        <p style={{ color: S.muted, marginBottom: 28, fontSize: 14 }}>
-          Enter the 6-digit code sent to your email address.
-          Check Mailhog at <strong>http://localhost:8025</strong>
-        </p>
-        <Field label="Verification code" value={code}
-          onChange={e => setCode(e.target.value)} placeholder="123456"
-          style={{ textAlign: 'center', fontSize: 24, letterSpacing: 8 }} />
-        <button className="btn-primary" onClick={handleVerify} disabled={loading}
-          style={{ width: '100%', padding: '13px', fontSize: 15 }}>
-          {loading ? <Spinner /> : 'Verify email'}
-        </button>
-        <p style={{ marginTop: 20, fontSize: 13 }}>
-          <span onClick={() => setPage('login')} style={{ color: S.accent, cursor: 'pointer' }}>
-            Back to sign in
-          </span>
-        </p>
-      </div>
-    </div>
-  );
-}
 
 /* ─── Forgot/Reset password ──────────────────────────────────────────────── */
 function ForgotPasswordPage({ setPage }) {
@@ -523,7 +481,7 @@ function ForgotPasswordPage({ setPage }) {
     setLoading(true);
     try {
       await authAPI.forgotPassword({ email });
-      toast('Check your email for a reset link (Mailhog: localhost:8025)');
+      toast('If that email is registered you will receive a reset link.');
       setPage('reset-password');
     } catch (err) {
       toast(err.response?.data?.detail || 'Error', 'error');
@@ -830,7 +788,6 @@ export default function App() {
     switch (page) {
       case 'login':          return <AuthPage mode="login"    setPage={setPage} />;
       case 'register':       return <AuthPage mode="register" setPage={setPage} />;
-      case 'verify-email':   return <VerifyEmailPage           setPage={setPage} />;
       case 'forgot-password':return <ForgotPasswordPage        setPage={setPage} />;
       case 'reset-password': return <ResetPasswordPage         setPage={setPage} />;
       case 'doctors':        return <DoctorsPage setPage={setPage} setSelectedDoctor={setSelectedDoctor} />;
