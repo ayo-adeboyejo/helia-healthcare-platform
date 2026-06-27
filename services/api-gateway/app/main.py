@@ -134,6 +134,16 @@ async def gateway_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+@app.get("/health")
+async def health():
+    return {
+        "status":   "ok",
+        "service":  "api-gateway",
+        "version":  "1.0.0",
+        "services": {k: v for k, v in ROUTES.items()},
+    }
+
+
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def proxy(path: str, request: Request):
     full_path  = f"/{path}"
@@ -167,13 +177,3 @@ async def proxy(path: str, request: Request):
     except httpx.RequestError as e:
         logger.error(f"Proxy error for {full_path}: {e}")
         raise HTTPException(status_code=502, detail="Service temporarily unavailable")
-
-
-@app.get("/health")
-async def health():
-    return {
-        "status":   "ok",
-        "service":  "api-gateway",
-        "version":  "1.0.0",
-        "services": {k: v for k, v in ROUTES.items()},
-    }
