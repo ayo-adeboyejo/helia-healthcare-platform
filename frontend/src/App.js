@@ -1,268 +1,519 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, {
+  createContext, useContext, useState, useEffect, useCallback, useRef,
+} from 'react';
 import { authAPI, userAPI } from './api';
 
-/* ─── Design tokens ──────────────────────────────────────────────────────── */
-const S = {
-  bg:      '#f0f4f8',
-  white:   '#ffffff',
-  card:    '#ffffff',
-  border:  '#e2e8f0',
-  accent:  '#0ea5e9',
-  accentD: '#0284c7',
-  success: '#10b981',
-  danger:  '#f43f5e',
-  warn:    '#f59e0b',
-  text:    '#1e293b',
-  muted:   '#64748b',
-  muted2:  '#94a3b8',
-};
+/* ─────────────────────────────────────────────────────────────────────────────
+   DESIGN SYSTEM
+   Fonts  : Plus Jakarta Sans (display 800) + Inter (body)
+            → replicates the Yeve-style heavy/light contrast
+   Tokens : CSS custom properties on :root — dark mode swaps via [data-theme=dark]
+   Palette: blue #1a73e8 / teal #0d9488 (light) ; blue #60a5fa / teal #2dd4bf (dark)
+   Signature: breathing pulse dot on availability + mixed-weight hero headline
+              with gradient accent word (like Yeve's coloured "pop-up")
+───────────────────────────────────────────────────────────────────────────── */
 
-const globalCSS = `
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: ${S.bg};
-    color: ${S.text};
-    font-family: 'Source Sans 3', sans-serif;
-    font-size: 15px;
-    line-height: 1.65;
-    min-height: 100vh;
-  }
-  h1,h2,h3,h4 { font-family: 'Playfair Display', serif; }
-  button { cursor: pointer; font-family: inherit; }
-  input, select, textarea { font-family: inherit; }
+const BASE_CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap');
 
-  @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
-  @keyframes spin   { to { transform: rotate(360deg); } }
-  @keyframes slideIn { from { opacity:0; transform:translateX(24px); } to { opacity:1; transform:none; } }
-  @keyframes progress { from { width:100%; } to { width:0%; } }
+/* ── CSS custom properties ── */
+:root {
+  --bg:          #f7f8fa;
+  --bg2:         #eef0f4;
+  --surface:     #ffffff;
+  --surface2:    #f3f4f6;
+  --surface3:    #e8eaed;
+  --border:      #e2e4e8;
+  --border2:     #d0d3da;
+  --text:        #111318;
+  --text-sub:    #4b5563;
+  --text-mute:   #9ca3af;
+  --accent:      #1a73e8;
+  --accent-l:    #dbeafe;
+  --accent-d:    #1557b0;
+  --teal:        #0d9488;
+  --teal-l:      #ccfbf1;
+  --success:     #15803d;
+  --success-l:   #dcfce7;
+  --danger:      #dc2626;
+  --danger-l:    #fee2e2;
+  --warn:        #d97706;
+  --warn-l:      #fef3c7;
+  --shadow-sm:   0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.06);
+  --shadow-md:   0 4px 12px rgba(0,0,0,.08),0 2px 6px rgba(0,0,0,.05);
+  --shadow-lg:   0 12px 32px rgba(0,0,0,.1),0 4px 12px rgba(0,0,0,.06);
+  --radius-sm:   8px;
+  --radius-md:   12px;
+  --radius-lg:   16px;
+  --radius-xl:   24px;
+}
 
-  .fade-up  { animation: fadeUp  0.3s ease forwards; }
-  .slide-in { animation: slideIn 0.25s ease forwards; }
+[data-theme="dark"] {
+  --bg:          #0d1117;
+  --bg2:         #161b22;
+  --surface:     #1c2128;
+  --surface2:    #252d38;
+  --surface3:    #2d3748;
+  --border:      #30363d;
+  --border2:     #444c56;
+  --text:        #e6edf3;
+  --text-sub:    #8b949e;
+  --text-mute:   #6e7681;
+  --accent:      #60a5fa;
+  --accent-l:    #1e3a5f;
+  --accent-d:    #93c5fd;
+  --teal:        #2dd4bf;
+  --teal-l:      #0d3330;
+  --success:     #4ade80;
+  --success-l:   #052e16;
+  --danger:      #f87171;
+  --danger-l:    #450a0a;
+  --warn:        #fbbf24;
+  --warn-l:      #451a03;
+  --shadow-sm:   0 1px 3px rgba(0,0,0,.4);
+  --shadow-md:   0 4px 12px rgba(0,0,0,.4);
+  --shadow-lg:   0 12px 32px rgba(0,0,0,.5);
+}
 
-  .btn-primary {
-    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    padding: 11px 24px; font-size: 14px; font-weight: 600;
-    background: ${S.accent}; color: #fff;
-    border: none; border-radius: 8px; cursor: pointer;
-    transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
-    box-shadow: 0 1px 3px rgba(14,165,233,0.3);
-  }
-  .btn-primary:hover:not(:disabled) { background: ${S.accentD}; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(14,165,233,0.3); }
-  .btn-primary:active:not(:disabled) { transform: scale(0.98); }
-  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+/* ── Reset ── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;scroll-behavior:smooth}
 
-  .btn-ghost {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 9px 18px; font-size: 13px; font-weight: 600;
-    background: transparent; color: ${S.muted};
-    border: 1px solid ${S.border}; border-radius: 8px; cursor: pointer;
-    transition: all 0.15s;
-  }
-  .btn-ghost:hover { color: ${S.text}; border-color: #cbd5e1; background: #f8fafc; }
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Inter',system-ui,sans-serif;
+  font-size:15px;line-height:1.6;min-height:100vh;
+  transition:background .25s,color .25s;
+}
 
-  .btn-danger {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 7px 14px; font-size: 13px; font-weight: 600;
-    background: #fff1f2; color: ${S.danger};
-    border: 1px solid #fecdd3; border-radius: 8px; cursor: pointer;
-    transition: all 0.15s;
-  }
-  .btn-danger:hover { background: #ffe4e6; }
+h1,h2,h3,h4,h5{
+  font-family:'Plus Jakarta Sans',sans-serif;
+  font-weight:800;line-height:1.15;
+}
 
-  .field { margin-bottom: 18px; }
-  .field label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: ${S.muted}; }
-  .field input, .field select, .field textarea {
-    width: 100%; padding: 10px 14px;
-    background: #fff; border: 1px solid ${S.border};
-    border-radius: 8px; color: ${S.text}; font-size: 14px; outline: none;
-    transition: border-color 0.15s, box-shadow 0.15s;
-  }
-  .field input:focus, .field select:focus, .field textarea:focus {
-    border-color: ${S.accent}; box-shadow: 0 0 0 3px rgba(14,165,233,0.12);
-  }
-  .field input::placeholder { color: ${S.muted2}; }
+button,input,select,textarea{font-family:inherit}
+button{cursor:pointer;border:none;background:none}
+a{color:var(--accent);text-decoration:none}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 
-  .card {
-    background: ${S.white}; border: 1px solid ${S.border};
-    border-radius: 12px; transition: box-shadow 0.2s, transform 0.2s;
-  }
-  .card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:99px}
 
-  .badge {
-    display: inline-block; padding: 3px 10px; border-radius: 99px;
-    font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
-  }
+/* ── Animations ── */
+@keyframes fadeUp    {from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+@keyframes fadeIn    {from{opacity:0}to{opacity:1}}
+@keyframes spin      {to{transform:rotate(360deg)}}
+@keyframes pulse     {0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(.82)}}
+@keyframes toastIn   {from{opacity:0;transform:translateX(110%)}to{opacity:1;transform:none}}
+@keyframes shrink    {from{width:100%}to{width:0}}
+@keyframes sk        {0%,100%{opacity:.35}50%{opacity:.7}}
+@keyframes pageIn    {from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 
-  .toast-wrap { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
-  .toast {
-    min-width: 280px; max-width: 360px; padding: 14px 18px; border-radius: 10px;
-    font-size: 14px; font-weight: 500; display: flex; gap: 10px; align-items: flex-start;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.15); animation: slideIn 0.25s ease; position: relative; overflow: hidden;
-  }
-  .toast::after { content:''; position:absolute; bottom:0; left:0; height:3px; animation: progress 3.5s linear forwards; }
-  .toast-success { background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; }
-  .toast-success::after { background: ${S.success}; }
-  .toast-error   { background:#fff1f2; border:1px solid #fecdd3; color:#9f1239; }
-  .toast-error::after { background: ${S.danger}; }
+.fadeUp {animation:fadeUp .4s cubic-bezier(.22,.68,0,1.2) both}
+.fadeIn {animation:fadeIn .3s ease both}
+.pageIn {animation:pageIn .3s ease both}
 
-  .divider { border:none; border-top:1px solid ${S.border}; margin:20px 0; }
+/* ── Surfaces ── */
+.surface   {background:var(--surface);border-radius:var(--radius-md);border:1px solid var(--border)}
+.surface-lg{background:var(--surface);border-radius:var(--radius-lg);border:1px solid var(--border)}
+.surface-xl{background:var(--surface);border-radius:var(--radius-xl);border:1px solid var(--border)}
+.surface:hover,.surface-lg:hover{box-shadow:var(--shadow-md)}
 
-  .spinner { width:22px; height:22px; border-radius:50%; border:2px solid ${S.border}; border-top-color:${S.accent}; animation:spin 0.7s linear infinite; }
+/* ── Lift on hover ── */
+.lift{transition:transform .2s ease,box-shadow .2s ease}
+.lift:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}
 
-  .nav-link {
-    padding: 8px 16px; font-size: 14px; font-weight: 600;
-    color: ${S.muted}; background: transparent; border: none; border-radius: 8px;
-    cursor: pointer; transition: all 0.15s;
-  }
-  .nav-link:hover { color: ${S.text}; background: #f1f5f9; }
-  .nav-link.active { color: ${S.accent}; background: #e0f2fe; }
+/* ── Buttons ── */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:10px 22px;font-size:14px;font-weight:600;border-radius:var(--radius-sm);
+  cursor:pointer;transition:all .15s ease;white-space:nowrap;
+  -webkit-user-select:none;user-select:none;font-family:'Plus Jakarta Sans',sans-serif;
+}
+.btn:disabled{opacity:.45;cursor:not-allowed;pointer-events:none}
 
-  .star { color: #fbbf24; font-size: 14px; }
-  .star.empty { color: ${S.border}; }
+.btn-primary{
+  background:var(--accent);color:#fff;
+  box-shadow:0 1px 4px rgba(26,115,232,.35);
+}
+.btn-primary:hover{background:var(--accent-d);box-shadow:0 4px 12px rgba(26,115,232,.4);transform:translateY(-1px)}
+.btn-primary:active{transform:scale(.98)}
 
-  ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-track { background: ${S.bg}; }
-  ::-webkit-scrollbar-thumb { background: ${S.border}; border-radius: 3px; }
+.btn-ghost{
+  background:transparent;color:var(--text-sub);
+  border:1.5px solid var(--border);
+}
+.btn-ghost:hover{background:var(--surface2);border-color:var(--border2);color:var(--text)}
+
+.btn-text{
+  background:transparent;color:var(--accent);
+  padding:6px 10px;font-size:14px;font-weight:600;border-radius:6px;
+}
+.btn-text:hover{background:var(--accent-l)}
+
+/* ── Fields ── */
+.field{margin-bottom:18px}
+.field-label{
+  display:block;margin-bottom:6px;
+  font-size:11.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--text-sub);
+}
+.field-input{
+  width:100%;padding:11px 14px;
+  background:var(--surface);border:1.5px solid var(--border);
+  border-radius:10px;color:var(--text);font-size:14px;outline:none;
+  transition:border-color .15s,box-shadow .15s;
+}
+.field-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(96,165,250,.18)}
+.field-input::placeholder{color:var(--text-mute)}
+
+/* ── Password strength ── */
+.pw-bar{height:3px;border-radius:99px;transition:width .3s,background .3s}
+
+/* ── Badges ── */
+.badge{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 10px;border-radius:99px;
+  font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  font-family:'Plus Jakarta Sans',sans-serif;
+}
+
+/* ── Pulse dot ── */
+.pulse-dot{
+  width:7px;height:7px;border-radius:50%;
+  display:inline-block;flex-shrink:0;
+  animation:pulse 2.2s ease-in-out infinite;
+}
+
+/* ── Nav ── */
+.nav-pill{
+  padding:7px 15px;font-size:14px;font-weight:500;
+  border-radius:99px;color:var(--text-sub);transition:all .15s;
+  font-family:'Plus Jakarta Sans',sans-serif;
+}
+.nav-pill:hover{background:var(--surface2);color:var(--text)}
+.nav-pill.active{
+  background:var(--accent-l);color:var(--accent);font-weight:700;
+  position:relative;
+}
+
+/* ── Toast ── */
+.toast-stack{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:10px;pointer-events:none}
+.toast{
+  min-width:300px;max-width:380px;padding:14px 18px;border-radius:14px;
+  display:flex;gap:12px;align-items:flex-start;pointer-events:all;
+  animation:toastIn .3s cubic-bezier(.22,.68,0,1.2);
+  box-shadow:var(--shadow-lg);position:relative;overflow:hidden;
+  background:var(--surface);border:1px solid var(--border);
+}
+.toast::after{content:'';position:absolute;bottom:0;left:0;height:2.5px;animation:shrink 4s linear forwards}
+.toast-ok::after{background:var(--success)}
+.toast-err::after{background:var(--danger)}
+.toast-icon{font-size:16px;font-weight:800;flex-shrink:0;margin-top:1px}
+.toast-ok  .toast-icon{color:var(--success)}
+.toast-err .toast-icon{color:var(--danger)}
+
+/* ── Stars ── */
+.star-on {color:#f59e0b;font-size:13px}
+.star-off{color:var(--border2);font-size:13px}
+
+/* ── Skeleton ── */
+.sk{background:var(--surface2);border-radius:6px;animation:sk 1.5s ease-in-out infinite}
+
+/* ── Divider ── */
+.hr{border:none;border-top:1px solid var(--border);margin:20px 0}
+
+/* ── Section overline (teal label above headings) ── */
+.overline{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--teal);margin-bottom:12px;font-family:'Plus Jakarta Sans',sans-serif;
+}
+.overline::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--teal);display:block}
+
+/* ── Filter bar sticky ── */
+.filter-bar{
+  position:sticky;top:60px;z-index:100;
+  background:var(--bg);border-bottom:1px solid var(--border);
+  padding:12px 0;
+  transition:background .25s;
+}
+
+/* ── Theme toggle ── */
+.theme-btn{
+  width:36px;height:36px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--surface2);color:var(--text-sub);
+  transition:all .2s;font-size:16px;border:1px solid var(--border);
+}
+.theme-btn:hover{background:var(--surface3);color:var(--text);transform:rotate(15deg)}
+
+/* ── Hero gradient text ── */
+.gradient-text{
+  background:linear-gradient(135deg,#60a5fa,#2dd4bf);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+
+/* ── Tabs ── */
+.tab-bar{display:flex;gap:4px;background:var(--surface2);padding:5px;border-radius:12px;width:fit-content}
+.tab{
+  padding:8px 20px;border-radius:9px;font-size:14px;font-weight:600;
+  color:var(--text-sub);transition:all .15s;
+  font-family:'Plus Jakarta Sans',sans-serif;
+}
+.tab.active{background:var(--surface);color:var(--accent);box-shadow:var(--shadow-sm)}
+
+/* ── Search hero input ── */
+.hero-search{
+  width:100%;max-width:560px;
+  background:rgba(255,255,255,.12);
+  border:1.5px solid rgba(255,255,255,.25);
+  border-radius:14px;padding:14px 20px 14px 48px;
+  color:#fff;font-size:15px;outline:none;
+  backdrop-filter:blur(8px);
+  transition:background .2s,border-color .2s;
+}
+.hero-search::placeholder{color:rgba(255,255,255,.55)}
+.hero-search:focus{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.5)}
 `;
 
 /* ─── Context ────────────────────────────────────────────────────────────── */
-const AuthContext  = createContext(null);
-const ToastContext = createContext(null);
-function useAuth()  { return useContext(AuthContext); }
-function useToast() { return useContext(ToastContext); }
+const AuthCtx  = createContext(null);
+const ToastCtx = createContext(null);
+const ThemeCtx = createContext(null);
+const useAuth  = () => useContext(AuthCtx);
+const useToast = () => useContext(ToastCtx);
+const useTheme = () => useContext(ThemeCtx);
 
-/* ─── Toast ──────────────────────────────────────────────────────────────── */
+/* ─── Theme provider ─────────────────────────────────────────────────────── */
+function ThemeProvider({ children }) {
+  const [dark, setDark] = useState(() => {
+    const saved = localStorage.getItem('helia-theme');
+    if (saved) return saved === 'dark';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    localStorage.setItem('helia-theme', dark ? 'dark' : 'light');
+  }, [dark]);
+
+  const toggle = useCallback(() => setDark(d => !d), []);
+  return <ThemeCtx.Provider value={{ dark, toggle }}>{children}</ThemeCtx.Provider>;
+}
+
+/* ─── Toast provider ─────────────────────────────────────────────────────── */
 function ToastProvider({ children }) {
-  const [toasts, setToasts] = useState([]);
-  const show = useCallback((msg, type = 'success') => {
-    const id = Date.now();
-    setToasts(p => [...p, { id, msg, type }]);
-    setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3600);
+  const [list, setList] = useState([]);
+  const show = useCallback((msg, type = 'ok') => {
+    const id = Date.now() + Math.random();
+    setList(p => [...p, { id, msg, type }]);
+    setTimeout(() => setList(p => p.filter(t => t.id !== id)), 4200);
   }, []);
   return (
-    <ToastContext.Provider value={show}>
+    <ToastCtx.Provider value={show}>
       {children}
-      <div className="toast-wrap">
-        {toasts.map(t => (
+      <div className="toast-stack">
+        {list.map(t => (
           <div key={t.id} className={`toast toast-${t.type}`}>
-            <span style={{ fontWeight: 800 }}>{t.type === 'success' ? '✓' : '✕'}</span>
-            <span>{t.msg}</span>
+            <span className="toast-icon">{t.type === 'ok' ? '✓' : '✕'}</span>
+            <span style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--text)' }}>{t.msg}</span>
           </div>
         ))}
       </div>
-    </ToastContext.Provider>
+    </ToastCtx.Provider>
   );
 }
 
-/* ─── Auth ───────────────────────────────────────────────────────────────── */
+/* ─── Auth provider ──────────────────────────────────────────────────────── */
 function AuthProvider({ children }) {
-  const [user, setUser]     = useState(null);
+  const [user, setUser]       = useState(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    const stored = localStorage.getItem('user');
-    const token  = localStorage.getItem('token');
-    if (stored && token) setUser(JSON.parse(stored));
+    const u = localStorage.getItem('user');
+    const t = localStorage.getItem('token');
+    if (u && t) try { setUser(JSON.parse(u)); } catch {}
     setLoading(false);
   }, []);
-  const login  = (token, refreshToken, userData) => {
+  const login = (token, refresh, userData) => {
     localStorage.setItem('token', token);
-    localStorage.setItem('refresh_token', refreshToken);
+    localStorage.setItem('refresh_token', refresh);
     localStorage.setItem('user', JSON.stringify(userData));
     setUser(userData);
   };
-  const logout = () => {
-    localStorage.clear();
-    setUser(null);
-  };
+  const logout = () => { localStorage.clear(); setUser(null); };
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthCtx.Provider value={{ user, login, logout, loading }}>
       {!loading && children}
-    </AuthContext.Provider>
+    </AuthCtx.Provider>
   );
 }
 
-/* ─── Shared components ──────────────────────────────────────────────────── */
-function Field({ label, type = 'text', ...props }) {
+/* ─── Atoms ──────────────────────────────────────────────────────────────── */
+function Spinner({ size = 20, color = 'var(--accent)' }) {
   return (
-    <div className="field">
-      {label && <label>{label}</label>}
-      <input type={type} {...props} />
-    </div>
+    <div style={{
+      width: size, height: size, borderRadius: '50%',
+      border: '2px solid var(--border)', borderTopColor: color,
+      animation: 'spin .7s linear infinite', flexShrink: 0,
+    }} />
   );
 }
 
-function Spinner() {
-  return <div className="spinner" />;
-}
-
-function Stars({ rating, max = 5 }) {
+function Stars({ rating = 0, max = 5 }) {
   return (
-    <span>
+    <span style={{ display: 'inline-flex', gap: 1 }}>
       {Array.from({ length: max }).map((_, i) => (
-        <span key={i} className={`star${i < Math.round(rating) ? '' : ' empty'}`}>★</span>
+        <span key={i} className={i < Math.round(rating) ? 'star-on' : 'star-off'}>★</span>
       ))}
     </span>
   );
 }
 
-function Badge({ children, color = S.accent }) {
+function Badge({ children, bg, color, dot }) {
   return (
-    <span className="badge" style={{ background: color + '18', color, border: `1px solid ${color}33` }}>
+    <span className="badge" style={{ background: bg, color }}>
+      {dot && <span className="pulse-dot" style={{ background: color }} />}
       {children}
     </span>
+  );
+}
+
+function Field({ label, type = 'text', ...rest }) {
+  return (
+    <div className="field">
+      {label && <label className="field-label">{label}</label>}
+      <input type={type} className="field-input" {...rest} />
+    </div>
+  );
+}
+
+function SelectField({ label, children, ...rest }) {
+  return (
+    <div className="field">
+      {label && <label className="field-label">{label}</label>}
+      <select className="field-input" {...rest}>{children}</select>
+    </div>
+  );
+}
+
+function Avatar({ name = '?', size = 40, fontSize = 16 }) {
+  const palette = ['#1a73e8','#0d9488','#7c3aed','#db2777','#ea580c','#0369a1'];
+  const bg = palette[(name.charCodeAt(0) + name.charCodeAt(1)) % palette.length];
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%', background: bg,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: '#fff', fontSize, fontWeight: 800, flexShrink: 0,
+      fontFamily: "'Plus Jakarta Sans',sans-serif",
+    }}>
+      {name[0].toUpperCase()}
+    </div>
+  );
+}
+
+/* Password strength meter */
+function PasswordStrength({ password }) {
+  const score = !password ? 0
+    : [/.{8,}/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/]
+        .filter(r => r.test(password)).length;
+  const bars  = [
+    { w: '25%', bg: 'var(--danger)' },
+    { w: '50%', bg: 'var(--warn)' },
+    { w: '75%', bg: '#3b82f6' },
+    { w: '100%', bg: 'var(--success)' },
+  ];
+  const labels = ['','Weak','Fair','Good','Strong'];
+  if (!password) return null;
+  const b = bars[score - 1] || bars[0];
+  return (
+    <div style={{ marginTop: -10, marginBottom: 16 }}>
+      <div style={{ height: 3, background: 'var(--surface2)', borderRadius: 99, overflow: 'hidden' }}>
+        <div className="pw-bar" style={{ width: b.w, background: b.bg, height: '100%' }} />
+      </div>
+      <div style={{ fontSize: 11, color: b.bg, marginTop: 4, fontWeight: 600 }}>{labels[score]}</div>
+    </div>
   );
 }
 
 /* ─── Navbar ─────────────────────────────────────────────────────────────── */
 function Navbar({ page, setPage }) {
   const { user, logout } = useAuth();
+  const { dark, toggle } = useTheme();
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const fn = () => setScrolled(window.scrollY > 10);
+    window.addEventListener('scroll', fn);
+    return () => window.removeEventListener('scroll', fn);
+  }, []);
+
   return (
     <nav style={{
-      background: S.white, borderBottom: `1px solid ${S.border}`,
-      padding: '0 32px', height: 64,
+      position: 'sticky', top: 0, zIndex: 200, height: 60,
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      position: 'sticky', top: 0, zIndex: 100,
-      boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+      padding: '0 28px',
+      background: scrolled
+        ? dark ? 'rgba(13,17,23,.88)' : 'rgba(247,248,250,.88)'
+        : 'var(--bg)',
+      backdropFilter: scrolled ? 'blur(20px)' : 'none',
+      borderBottom: `1px solid ${scrolled ? 'var(--border)' : 'transparent'}`,
+      transition: 'background .25s,border-color .25s',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
-        <span onClick={() => setPage('home')} style={{
-          fontFamily: 'Playfair Display, serif', fontSize: 22, fontWeight: 800,
-          color: S.accent, cursor: 'pointer',
-        }}>
-          Helia
-        </span>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button className={`nav-link${page === 'home' ? ' active' : ''}`} onClick={() => setPage('home')}>Home</button>
-          <button className={`nav-link${page === 'doctors' ? ' active' : ''}`} onClick={() => setPage('doctors')}>Find Doctors</button>
-          {user && (
-            <button className={`nav-link${page === 'dashboard' ? ' active' : ''}`} onClick={() => setPage('dashboard')}>Dashboard</button>
-          )}
-        </div>
+      {/* Left — logo + nav links */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <button onClick={() => setPage('home')} style={{
+          fontFamily: "'Plus Jakarta Sans',sans-serif",
+          fontSize: 20, fontWeight: 800, letterSpacing: '-1px',
+          background: 'linear-gradient(135deg,var(--accent),var(--teal))',
+          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+          marginRight: 20,
+        }}>Helia</button>
+        {[['home','Home'],['doctors','Find Doctors']].map(([p,l]) => (
+          <button key={p} className={`nav-pill${page===p?' active':''}`} onClick={() => setPage(p)}>{l}</button>
+        ))}
+        {user && (
+          <button className={`nav-pill${page==='dashboard'?' active':''}`} onClick={() => setPage('dashboard')}>
+            Dashboard
+          </button>
+        )}
       </div>
+
+      {/* Right — theme + auth */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {/* Dark / light toggle */}
+        <button className="theme-btn" onClick={toggle} title={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
+          {dark ? '☀️' : '🌙'}
+        </button>
+
         {user ? (
           <>
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8,
-              padding: '5px 12px 5px 8px', background: '#f0f9ff',
-              border: `1px solid #bae6fd`, borderRadius: 99,
-            }}>
-              <div style={{
-                width: 28, height: 28, borderRadius: '50%',
-                background: S.accent, color: '#fff',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 13, fontWeight: 700,
-              }}>
-                {user.email[0].toUpperCase()}
-              </div>
-              <span style={{ fontSize: 13, fontWeight: 600, color: S.accentD }}>{user.email}</span>
+              padding: '4px 12px 4px 5px',
+              background: 'var(--accent-l)', borderRadius: 99,
+              cursor: 'pointer', border: '1px solid transparent',
+            }} onClick={() => setPage('dashboard')}>
+              <Avatar name={user.email} size={28} fontSize={12} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>
+                {user.email.split('@')[0]}
+              </span>
             </div>
-            <button className="btn-ghost" onClick={logout}>Sign out</button>
+            <button className="btn btn-ghost" onClick={logout}
+              style={{ padding: '7px 16px', fontSize: 13 }}>
+              Sign out
+            </button>
           </>
         ) : (
           <>
-            <button className="btn-ghost" onClick={() => setPage('login')}>Sign in</button>
-            <button className="btn-primary" onClick={() => setPage('register')}>Get started</button>
+            <button className="btn btn-ghost" onClick={() => setPage('login')}
+              style={{ padding: '7px 18px' }}>Sign in</button>
+            <button className="btn btn-primary" onClick={() => setPage('register')}
+              style={{ padding: '8px 20px' }}>Get started</button>
           </>
         )}
       </div>
@@ -271,279 +522,369 @@ function Navbar({ page, setPage }) {
 }
 
 /* ─── Home page ──────────────────────────────────────────────────────────── */
-function HomePage({ setPage }) {
+function HomePage({ setPage, setFilters: setGlobalFilters }) {
   const [specialties, setSpecialties] = useState([]);
+  const [heroSearch, setHeroSearch]   = useState('');
 
   useEffect(() => {
-    userAPI.listSpecialties()
-      .then(r => setSpecialties(r.data))
-      .catch(() => {});
+    userAPI.listSpecialties().then(r => setSpecialties(r.data)).catch(() => {});
   }, []);
 
-  const stats = [
-    { label: 'Doctors',      value: '500+',  icon: '👨‍⚕️' },
-    { label: 'Specialties',  value: '30+',   icon: '🏥' },
-    { label: 'Appointments', value: '10k+',  icon: '📅' },
-    { label: 'Patients',     value: '50k+',  icon: '❤️' },
-  ];
+  const handleHeroSearch = () => {
+    if (heroSearch.trim()) {
+      setGlobalFilters(f => ({ ...f, search: heroSearch }));
+    }
+    setPage('doctors');
+  };
+
+  const icons = {
+    'Cardiology':'❤️','Dermatology':'✨','Neurology':'🧠','Orthopaedics':'🦴',
+    'Paediatrics':'👶','General Practice':'🩺','Psychiatry':'💬',
+    'Ophthalmology':'👁️','Gynaecology':'🌸','Oncology':'🎗️','ENT':'👂',
+    'Radiology':'🔬',
+  };
+
+  const display = specialties.length > 0
+    ? specialties
+    : ['Cardiology','Dermatology','Neurology','Orthopaedics','Paediatrics',
+       'General Practice','Psychiatry','Ophthalmology'].map(n => ({ id: n, name: n }));
 
   return (
-    <div>
-      {/* Hero */}
-      <div style={{
-        background: `linear-gradient(135deg, #0ea5e9, #0284c7)`,
-        padding: '80px 40px', textAlign: 'center', color: '#fff',
+    <div className="pageIn">
+      {/* ── Hero ── */}
+      <section style={{
+        background: 'linear-gradient(150deg, #0f172a 0%, #1e3a5f 45%, #0d3330 100%)',
+        padding: '96px 24px 80px', textAlign: 'center', color: '#fff',
+        position: 'relative', overflow: 'hidden',
       }}>
-        <h1 style={{ fontSize: 52, fontWeight: 800, marginBottom: 16, lineHeight: 1.1 }}>
-          Your Health, Our Priority
-        </h1>
-        <p style={{ fontSize: 18, opacity: 0.9, marginBottom: 36, maxWidth: 560, margin: '0 auto 36px' }}>
-          Book appointments with top doctors in your area. Fast, easy, and reliable.
-        </p>
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-          <button className="btn-primary" onClick={() => setPage('doctors')}
-            style={{ background: '#fff', color: S.accent, fontSize: 16, padding: '14px 32px' }}>
-            Find a Doctor
-          </button>
-          <button className="btn-ghost" onClick={() => setPage('register')}
-            style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.4)', fontSize: 16, padding: '14px 32px' }}>
-            Create Account
-          </button>
-        </div>
-      </div>
+        {/* Ambient glows */}
+        {[
+          { top: -120, right: -80, size: 460, color: 'rgba(26,115,232,.18)' },
+          { bottom: -80, left: -60, size: 340, color: 'rgba(13,148,136,.22)' },
+          { top: '40%', left: '50%', size: 200, color: 'rgba(96,165,250,.1)' },
+        ].map((g, i) => (
+          <div key={i} style={{
+            position: 'absolute', width: g.size, height: g.size,
+            borderRadius: '50%', background: g.color, filter: 'blur(80px)',
+            top: g.top, bottom: g.bottom, left: g.left, right: g.right,
+            pointerEvents: 'none', transform: g.left === '50%' ? 'translate(-50%,-50%)' : undefined,
+          }} />
+        ))}
 
-      {/* Stats */}
-      <div style={{ background: S.white, borderBottom: `1px solid ${S.border}`, padding: '32px 40px' }}>
-        <div style={{ maxWidth: 900, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 24 }}>
-          {stats.map(s => (
-            <div key={s.label} style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 32, marginBottom: 4 }}>{s.icon}</div>
-              <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'Playfair Display', color: S.accent }}>{s.value}</div>
-              <div style={{ color: S.muted, fontSize: 14 }}>{s.label}</div>
+        <div style={{ position: 'relative', maxWidth: 720, margin: '0 auto' }}>
+          <div className="overline" style={{ justifyContent: 'center', color: '#5eead4' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#5eead4', display: 'block' }} />
+            Healthcare, reimagined
+          </div>
+
+          {/* Yeve-style headline — heavy black + gradient accent word */}
+          <h1 style={{
+            fontSize: 'clamp(44px,7vw,76px)',
+            fontWeight: 800, letterSpacing: '-2.5px',
+            lineHeight: 1.08, color: '#fff', marginBottom: 24,
+          }}>
+            Find the right doctor,{' '}
+            <span className="gradient-text">book instantly.</span>
+          </h1>
+
+          <p style={{
+            fontSize: 18, color: 'rgba(255,255,255,.72)',
+            maxWidth: 520, margin: '0 auto 40px', lineHeight: 1.75,
+          }}>
+            Connect with verified specialists, manage appointments and health records — all in one place.
+          </p>
+
+          {/* Hero search */}
+          <div style={{ position: 'relative', maxWidth: 520, margin: '0 auto 32px' }}>
+            <span style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', fontSize: 18, pointerEvents: 'none' }}>🔍</span>
+            <input
+              className="hero-search"
+              placeholder="Search by name, specialty…"
+              value={heroSearch}
+              onChange={e => setHeroSearch(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleHeroSearch()}
+            />
+            {heroSearch && (
+              <button onClick={handleHeroSearch} className="btn btn-primary"
+                style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', padding: '7px 16px', fontSize: 13, borderRadius: 10 }}>
+                Search
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button className="btn btn-primary" onClick={() => setPage('doctors')}
+              style={{ padding: '13px 32px', fontSize: 15, borderRadius: 12, background: '#fff', color: '#1a73e8' }}>
+              Browse all doctors
+            </button>
+            <button className="btn btn-ghost" onClick={() => setPage('register')}
+              style={{ padding: '13px 32px', fontSize: 15, borderRadius: 12, color: '#fff', borderColor: 'rgba(255,255,255,.28)' }}>
+              Create free account
+            </button>
+          </div>
+        </div>
+
+        {/* Stats row */}
+        <div style={{
+          display: 'flex', justifyContent: 'center', gap: 48, marginTop: 60,
+          flexWrap: 'wrap', position: 'relative',
+        }}>
+          {[['500+','Specialists'],['30+','Specialties'],['10k+','Appointments'],['50k+','Patients']].map(([v,l]) => (
+            <div key={l} style={{ textAlign: 'center' }}>
+              <div style={{
+                fontSize: 28, fontWeight: 800, color: '#60a5fa',
+                fontFamily: "'Plus Jakarta Sans',sans-serif",
+                letterSpacing: '-1px',
+              }}>{v}</div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,.5)', marginTop: 3, textTransform: 'uppercase', letterSpacing: '.08em' }}>{l}</div>
             </div>
           ))}
         </div>
-      </div>
+      </section>
 
-      {/* Specialties */}
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '60px 24px' }}>
-        <h2 style={{ fontSize: 32, textAlign: 'center', marginBottom: 8 }}>Browse by Specialty</h2>
-        <p style={{ textAlign: 'center', color: S.muted, marginBottom: 40 }}>Find the right specialist for your needs</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16 }}>
-          {specialties.length > 0 ? specialties.map(s => (
-            <div key={s.id} className="card fade-up" onClick={() => setPage('doctors')}
-              style={{ padding: 24, textAlign: 'center', cursor: 'pointer' }}>
-              <div style={{ fontSize: 32, marginBottom: 8 }}>🏥</div>
-              <p style={{ fontWeight: 600, fontSize: 14, color: S.text }}>{s.name}</p>
+      {/* ── Specialties ── */}
+      <section style={{ maxWidth: 1160, margin: '0 auto', padding: '72px 24px' }}>
+        <div className="overline">Browse by specialty</div>
+        <h2 style={{ fontSize: 38, letterSpacing: '-1.5px', marginBottom: 8, color: 'var(--text)' }}>
+          Find the right specialist
+        </h2>
+        <p style={{ color: 'var(--text-sub)', marginBottom: 40, fontSize: 16 }}>
+          {display.length} specialties across our verified network.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(144px,1fr))', gap: 12 }}>
+          {display.map((s, i) => (
+            <div key={s.id} className="surface lift fadeUp"
+              onClick={() => setPage('doctors')}
+              style={{ padding: '22px 14px', textAlign: 'center', cursor: 'pointer', animationDelay: `${i * .035}s` }}>
+              <div style={{ fontSize: 28, marginBottom: 10 }}>{icons[s.name] || '🏥'}</div>
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', lineHeight: 1.3, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{s.name}</p>
             </div>
-          )) : (
-            // Placeholder specialties before seeding
-            ['Cardiology','Dermatology','Neurology','Orthopaedics','Paediatrics','General Practice'].map(name => (
-              <div key={name} className="card fade-up" onClick={() => setPage('doctors')}
-                style={{ padding: 24, textAlign: 'center', cursor: 'pointer' }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>🏥</div>
-                <p style={{ fontWeight: 600, fontSize: 14 }}>{name}</p>
-              </div>
-            ))
-          )}
+          ))}
         </div>
-      </div>
+      </section>
 
-      {/* How it works */}
-      <div style={{ background: S.white, padding: '60px 24px' }}>
-        <div style={{ maxWidth: 900, margin: '0 auto' }}>
-          <h2 style={{ fontSize: 32, textAlign: 'center', marginBottom: 48 }}>How It Works</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 32 }}>
+      {/* ── How it works ── */}
+      <section style={{ background: 'var(--surface)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '72px 24px' }}>
+        <div style={{ maxWidth: 960, margin: '0 auto' }}>
+          <div className="overline" style={{ justifyContent: 'center' }}>Simple process</div>
+          <h2 style={{ fontSize: 38, letterSpacing: '-1.5px', textAlign: 'center', marginBottom: 56, color: 'var(--text)' }}>
+            Healthcare in three steps
+          </h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 40 }}>
             {[
-              { step: '1', title: 'Find a Doctor', desc: 'Search by specialty, location, or availability', icon: '🔍' },
-              { step: '2', title: 'Book Appointment', desc: 'Choose a convenient time slot and confirm', icon: '📅' },
-              { step: '3', title: 'Get Care',        desc: 'Attend your appointment and feel better', icon: '❤️' },
-            ].map(item => (
-              <div key={item.step} style={{ textAlign: 'center' }}>
+              { n:'01', emoji:'🔍', title:'Search', desc:'Filter by specialty, availability, fee, or language to find your ideal doctor.' },
+              { n:'02', emoji:'📅', title:'Book',   desc:'Select an open time slot and confirm your appointment in under a minute.' },
+              { n:'03', emoji:'🩺', title:'Attend', desc:'Show up and receive care. Your records and history are automatically saved.' },
+            ].map(s => (
+              <div key={s.n} style={{ textAlign: 'center' }}>
                 <div style={{
-                  width: 64, height: 64, borderRadius: '50%',
-                  background: '#e0f2fe', margin: '0 auto 16px',
+                  width: 72, height: 72, borderRadius: 20,
+                  background: 'var(--accent-l)', margin: '0 auto 20px',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 28,
-                }}>
-                  {item.icon}
-                </div>
-                <h3 style={{ fontSize: 18, marginBottom: 8 }}>{item.title}</h3>
-                <p style={{ color: S.muted, fontSize: 14 }}>{item.desc}</p>
+                  fontSize: 28, border: '1px solid var(--border)',
+                }}>{s.emoji}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--teal)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 8 }}>{s.n}</div>
+                <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 10, color: 'var(--text)', fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{s.title}</h3>
+                <p style={{ color: 'var(--text-sub)', fontSize: 14, lineHeight: 1.75 }}>{s.desc}</p>
               </div>
             ))}
           </div>
         </div>
+      </section>
+
+      {/* ── CTA ── */}
+      <section style={{ padding: '80px 24px', textAlign: 'center' }}>
+        <div style={{ maxWidth: 520, margin: '0 auto' }}>
+          <h2 style={{ fontSize: 38, letterSpacing: '-1.5px', marginBottom: 16, color: 'var(--text)' }}>
+            Ready to take control of{' '}
+            <span className="gradient-text">your health?</span>
+          </h2>
+          <p style={{ color: 'var(--text-sub)', marginBottom: 32, fontSize: 16 }}>
+            Join thousands of patients who trust Helia.
+          </p>
+          <button className="btn btn-primary" onClick={() => setPage('register')}
+            style={{ padding: '14px 36px', fontSize: 16, borderRadius: 12 }}>
+            Get started for free
+          </button>
+        </div>
+      </section>
+
+      <footer style={{ borderTop: '1px solid var(--border)', padding: '24px', textAlign: 'center' }}>
+        <p style={{ fontSize: 13, color: 'var(--text-mute)' }}>
+          © 2025 Helia · Built on AWS · Containerised with Docker Compose
+        </p>
+      </footer>
+    </div>
+  );
+}
+
+/* ─── Auth card ──────────────────────────────────────────────────────────── */
+function AuthCard({ title, subtitle, icon, children }) {
+  return (
+    <div style={{
+      minHeight: 'calc(100vh - 60px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 24,
+      background: 'radial-gradient(ellipse at 55% 0%, var(--accent-l) 0%, var(--bg) 65%)',
+    }}>
+      <div className="surface-xl fadeUp" style={{ padding: '44px 48px', width: '100%', maxWidth: 440, boxShadow: 'var(--shadow-lg)' }}>
+        {icon && <div style={{ fontSize: 36, marginBottom: 14 }}>{icon}</div>}
+        <h2 style={{ fontSize: 30, letterSpacing: '-1px', marginBottom: 6, color: 'var(--text)' }}>{title}</h2>
+        <p style={{ color: 'var(--text-sub)', marginBottom: 32, fontSize: 15 }}>{subtitle}</p>
+        {children}
       </div>
     </div>
   );
 }
 
-/* ─── Auth pages ─────────────────────────────────────────────────────────── */
+/* ─── Auth page ──────────────────────────────────────────────────────────── */
 function AuthPage({ mode, setPage }) {
-  const { login }           = useAuth();
-  const toast               = useToast();
-  const [form, setForm]     = useState({ email: '', password: '', role: 'patient' });
-  const [otp, setOtp]       = useState('');
-  const [needOtp, setNeedOtp] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { login }    = useAuth();
+  const toast        = useToast();
+  const [form, setF] = useState({ email: '', password: '', role: 'patient' });
+  const [busy, setBusy] = useState(false);
   const isLogin = mode === 'login';
 
-  const handleSubmit = async () => {
-    setLoading(true);
+  const go = async () => {
+    setBusy(true);
     try {
       if (isLogin) {
-        const { data } = await authAPI.login({ ...form, otp_code: otp || undefined });
-        login(data.access_token, data.refresh_token, { email: form.email, role: 'patient' });
+        const { data } = await authAPI.login(form);
+        login(data.access_token, data.refresh_token, { email: form.email, role: form.role });
         toast('Welcome back!');
         setPage('dashboard');
       } else {
         await authAPI.register(form);
-        toast('Account created! You can now sign in.');
+        toast('Account created — sign in now.');
         setPage('login');
       }
     } catch (err) {
-      const detail = err.response?.data?.detail;
-      if (typeof detail === 'string' && detail.includes('2FA')) {
-        setNeedOtp(true);
-        toast('2FA code sent to your email', 'success');
-      } else if (Array.isArray(detail)) {
-        toast(detail[0]?.msg || 'Validation error', 'error');
-      } else {
-        toast(detail || 'Something went wrong', 'error');
-      }
-    } finally { setLoading(false); }
+      const d = err.response?.data?.detail;
+      toast(Array.isArray(d) ? d[0]?.msg : (d || 'Something went wrong'), 'err');
+    } finally { setBusy(false); }
   };
 
   return (
-    <div style={{ minHeight: 'calc(100vh - 64px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: S.bg }}>
-      <div className="card fade-up" style={{ padding: '40px 44px', width: '100%', maxWidth: 420 }}>
-        <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 6 }}>
-          {isLogin ? 'Welcome back' : 'Create account'}
-        </h2>
-        <p style={{ color: S.muted, marginBottom: 32, fontSize: 14 }}>
-          {isLogin ? 'Sign in to your Helia account' : 'Join Helia to book appointments'}
-        </p>
+    <AuthCard
+      icon={isLogin ? '👋' : '🏥'}
+      title={isLogin ? 'Welcome back' : 'Create your account'}
+      subtitle={isLogin ? 'Sign in to access your health dashboard.' : 'Book appointments with top specialists.'}
+    >
+      <Field label="Email address" type="email" placeholder="you@example.com"
+        value={form.email} onChange={e => setF({ ...form, email: e.target.value })}
+        onKeyDown={e => e.key === 'Enter' && go()} autoFocus />
 
-        <Field label="Email" type="email" value={form.email}
-          onChange={e => setForm({ ...form, email: e.target.value })} placeholder="you@example.com" />
-        <Field label="Password" type="password" value={form.password}
-          onChange={e => setForm({ ...form, password: e.target.value })} placeholder="••••••••" />
+      <Field label="Password" type="password" placeholder="At least 8 characters"
+        value={form.password} onChange={e => setF({ ...form, password: e.target.value })}
+        onKeyDown={e => e.key === 'Enter' && go()} />
 
-        {!isLogin && (
-          <div className="field">
-            <label>I am a</label>
-            <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
-              <option value="patient">Patient</option>
-              <option value="doctor">Doctor</option>
-            </select>
-          </div>
-        )}
+      {!isLogin && <PasswordStrength password={form.password} />}
 
-        {needOtp && (
-          <Field label="2FA Code (sent to your email)" value={otp}
-            onChange={e => setOtp(e.target.value)} placeholder="123456" />
-        )}
+      {!isLogin && (
+        <SelectField label="Registering as" value={form.role} onChange={e => setF({ ...form, role: e.target.value })}>
+          <option value="patient">Patient — book appointments</option>
+          <option value="doctor">Doctor — manage my schedule</option>
+        </SelectField>
+      )}
 
-        <button className="btn-primary" onClick={handleSubmit} disabled={loading}
-          style={{ width: '100%', marginTop: 8, padding: '13px', fontSize: 15 }}>
-          {loading ? <Spinner /> : (isLogin ? 'Sign in' : 'Create account')}
+      <button className="btn btn-primary" onClick={go} disabled={busy}
+        style={{ width: '100%', padding: 14, fontSize: 15, borderRadius: 10, marginTop: 4 }}>
+        {busy ? <Spinner size={18} color="#fff" /> : (isLogin ? 'Sign in' : 'Create account')}
+      </button>
+
+      {isLogin && (
+        <button className="btn btn-text" onClick={() => setPage('forgot-password')}
+          style={{ width: '100%', marginTop: 10, textAlign: 'center' }}>
+          Forgot your password?
         </button>
+      )}
 
-        <p style={{ textAlign: 'center', marginTop: 24, color: S.muted, fontSize: 13 }}>
-          {isLogin ? "Don't have an account? " : 'Already have an account? '}
-          <span onClick={() => setPage(isLogin ? 'register' : 'login')}
-            style={{ color: S.accent, cursor: 'pointer', fontWeight: 700 }}>
-            {isLogin ? 'Register' : 'Sign in'}
-          </span>
-        </p>
-        {isLogin && (
-          <p style={{ textAlign: 'center', marginTop: 10, fontSize: 13 }}>
-            <span onClick={() => setPage('forgot-password')}
-              style={{ color: S.muted, cursor: 'pointer', textDecoration: 'underline' }}>
-              Forgot your password?
-            </span>
-          </p>
-        )}
-      </div>
-    </div>
+      <div className="hr" style={{ margin: '24px 0' }} />
+
+      <p style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-sub)' }}>
+        {isLogin ? "Don't have an account?" : 'Already have an account?'}{' '}
+        <button className="btn-text" onClick={() => setPage(isLogin ? 'register' : 'login')}
+          style={{ fontWeight: 700, color: 'var(--accent)' }}>
+          {isLogin ? 'Sign up free' : 'Sign in'}
+        </button>
+      </p>
+    </AuthCard>
   );
 }
 
-
-/* ─── Forgot/Reset password ──────────────────────────────────────────────── */
+/* ─── Forgot / Reset password ────────────────────────────────────────────── */
 function ForgotPasswordPage({ setPage }) {
   const toast = useToast();
-  const [email, setEmail]     = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async () => {
-    setLoading(true);
-    try {
-      await authAPI.forgotPassword({ email });
-      toast('If that email is registered you will receive a reset link.');
-      setPage('reset-password');
-    } catch (err) {
-      toast(err.response?.data?.detail || 'Error', 'error');
-    } finally { setLoading(false); }
+  const [email, setEmail] = useState('');
+  const [busy, setBusy]   = useState(false);
+  const go = async () => {
+    setBusy(true);
+    try { await authAPI.forgotPassword({ email }); toast('Reset link sent — check your email.'); setPage('reset-password'); }
+    catch { toast('Something went wrong', 'err'); }
+    finally { setBusy(false); }
   };
-
   return (
-    <div style={{ minHeight: 'calc(100vh - 64px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div className="card fade-up" style={{ padding: '40px 44px', width: '100%', maxWidth: 420 }}>
-        <h2 style={{ fontSize: 26, marginBottom: 8 }}>Reset password</h2>
-        <p style={{ color: S.muted, marginBottom: 28, fontSize: 14 }}>Enter your email to receive a reset link.</p>
-        <Field label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
-        <button className="btn-primary" onClick={handleSubmit} disabled={loading} style={{ width: '100%', padding: '13px' }}>
-          {loading ? <Spinner /> : 'Send reset link'}
-        </button>
-        <p style={{ textAlign: 'center', marginTop: 20, fontSize: 13 }}>
-          <span onClick={() => setPage('login')} style={{ color: S.accent, cursor: 'pointer' }}>Back to sign in</span>
-        </p>
-      </div>
-    </div>
+    <AuthCard icon="🔑" title="Reset your password" subtitle="Enter your email and we'll send a reset link.">
+      <Field label="Email address" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && go()} autoFocus />
+      <button className="btn btn-primary" onClick={go} disabled={busy} style={{ width: '100%', padding: 14, fontSize: 15, borderRadius: 10 }}>
+        {busy ? <Spinner size={18} color="#fff" /> : 'Send reset link'}
+      </button>
+      <button className="btn btn-text" onClick={() => setPage('login')} style={{ width: '100%', marginTop: 12, textAlign: 'center' }}>← Back to sign in</button>
+    </AuthCard>
   );
 }
 
 function ResetPasswordPage({ setPage }) {
   const toast = useToast();
-  const [form, setForm]     = useState({ token: '', new_password: '', confirm: '' });
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async () => {
-    if (form.new_password !== form.confirm) return toast('Passwords do not match', 'error');
-    setLoading(true);
-    try {
-      await authAPI.resetPassword({ token: form.token, new_password: form.new_password });
-      toast('Password reset successfully!');
-      setPage('login');
-    } catch (err) {
-      toast(err.response?.data?.detail || 'Error', 'error');
-    } finally { setLoading(false); }
+  const [f, setF] = useState({ token: '', new_password: '', confirm: '' });
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    if (f.new_password !== f.confirm) return toast('Passwords do not match', 'err');
+    setBusy(true);
+    try { await authAPI.resetPassword({ token: f.token, new_password: f.new_password }); toast('Password updated.'); setPage('login'); }
+    catch (err) { toast(err.response?.data?.detail || 'Reset failed', 'err'); }
+    finally { setBusy(false); }
   };
-
   return (
-    <div style={{ minHeight: 'calc(100vh - 64px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div className="card fade-up" style={{ padding: '40px 44px', width: '100%', maxWidth: 420 }}>
-        <h2 style={{ fontSize: 26, marginBottom: 8 }}>Set new password</h2>
-        <p style={{ color: S.muted, marginBottom: 28, fontSize: 14 }}>Paste the token from your email and choose a new password.</p>
-        <Field label="Reset token" value={form.token} onChange={e => setForm({ ...form, token: e.target.value })} placeholder="Paste token here" style={{ fontFamily: 'monospace', fontSize: 12 }} />
-        <Field label="New password" type="password" value={form.new_password} onChange={e => setForm({ ...form, new_password: e.target.value })} placeholder="••••••••" />
-        <Field label="Confirm password" type="password" value={form.confirm} onChange={e => setForm({ ...form, confirm: e.target.value })} placeholder="••••••••" />
-        <button className="btn-primary" onClick={handleSubmit} disabled={loading} style={{ width: '100%', padding: '13px' }}>
-          {loading ? <Spinner /> : 'Reset password'}
-        </button>
+    <AuthCard icon="🔒" title="Set new password" subtitle="Paste the token from your email below.">
+      <Field label="Reset token" placeholder="Paste token here" value={f.token} onChange={e => setF({ ...f, token: e.target.value })} />
+      <Field label="New password" type="password" placeholder="Min. 8 characters" value={f.new_password} onChange={e => setF({ ...f, new_password: e.target.value })} />
+      <PasswordStrength password={f.new_password} />
+      <Field label="Confirm password" type="password" placeholder="Repeat password" value={f.confirm} onChange={e => setF({ ...f, confirm: e.target.value })} />
+      <button className="btn btn-primary" onClick={go} disabled={busy} style={{ width: '100%', padding: 14, fontSize: 15, borderRadius: 10 }}>
+        {busy ? <Spinner size={18} color="#fff" /> : 'Update password'}
+      </button>
+    </AuthCard>
+  );
+}
+
+/* ─── Skeleton ───────────────────────────────────────────────────────────── */
+function DoctorSkeleton() {
+  return (
+    <div className="surface" style={{ padding: 24 }}>
+      <div style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
+        <div className="sk" style={{ width: 52, height: 52, borderRadius: '50%', flexShrink: 0 }} />
+        <div style={{ flex: 1 }}>
+          <div className="sk" style={{ height: 13, width: '68%', marginBottom: 8 }} />
+          <div className="sk" style={{ height: 11, width: '45%', marginBottom: 8 }} />
+          <div className="sk" style={{ height: 11, width: '55%' }} />
+        </div>
+      </div>
+      <div className="sk" style={{ height: 11, width: '90%', marginBottom: 6 }} />
+      <div className="sk" style={{ height: 11, width: '65%', marginBottom: 20 }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="sk" style={{ height: 26, width: 60 }} />
+        <div className="sk" style={{ height: 36, width: 100, borderRadius: 8 }} />
       </div>
     </div>
   );
 }
 
-/* ─── Doctors listing page ───────────────────────────────────────────────── */
-function DoctorsPage({ setPage, setSelectedDoctor }) {
+/* ─── Doctors page ───────────────────────────────────────────────────────── */
+function DoctorsPage({ setPage, setSelectedDoctor, filters, setFilters }) {
   const [doctors, setDoctors]         = useState([]);
   const [specialties, setSpecialties] = useState([]);
   const [loading, setLoading]         = useState(true);
-  const [filters, setFilters]         = useState({ specialty_id: '', is_available: '', min_fee: '', max_fee: '' });
   const toast = useToast();
 
   useEffect(() => {
@@ -552,103 +893,160 @@ function DoctorsPage({ setPage, setSelectedDoctor }) {
 
   useEffect(() => {
     setLoading(true);
-    const params = {};
-    if (filters.specialty_id) params.specialty_id = filters.specialty_id;
-    if (filters.is_available !== '') params.is_available = filters.is_available === 'true';
-    if (filters.min_fee) params.min_fee = filters.min_fee;
-    if (filters.max_fee) params.max_fee = filters.max_fee;
-    userAPI.listDoctors(params)
+    const p = {};
+    if (filters.specialty_id)  p.specialty_id  = filters.specialty_id;
+    if (filters.is_available)  p.is_available  = filters.is_available === 'true';
+    if (filters.min_fee)       p.min_fee       = filters.min_fee;
+    if (filters.max_fee)       p.max_fee       = filters.max_fee;
+    userAPI.listDoctors(p)
       .then(r => setDoctors(r.data))
-      .catch(() => toast('Failed to load doctors', 'error'))
+      .catch(() => toast('Could not load doctors', 'err'))
       .finally(() => setLoading(false));
-  }, [filters]);
+  }, [filters.specialty_id, filters.is_available, filters.min_fee, filters.max_fee]);
+
+  const visible = doctors.filter(d =>
+    !filters.search || `${d.first_name} ${d.last_name} ${d.qualification || ''}`.toLowerCase().includes(filters.search.toLowerCase())
+  );
+
+  const hasFilters = filters.search || filters.specialty_id || filters.is_available || filters.min_fee || filters.max_fee;
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '40px 24px' }}>
-      <h2 style={{ fontSize: 32, marginBottom: 6 }}>Find a Doctor</h2>
-      <p style={{ color: S.muted, marginBottom: 32 }}>Browse our network of verified healthcare professionals</p>
+    <div className="pageIn">
+      {/* Sticky filter bar */}
+      <div className="filter-bar">
+        <div style={{ maxWidth: 1180, margin: '0 auto', padding: '0 24px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Search */}
+          <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 180 }}>
+            <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 15, pointerEvents: 'none', color: 'var(--text-mute)' }}>🔍</span>
+            <input className="field-input" placeholder="Name or specialty…"
+              value={filters.search || ''}
+              onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
+              style={{ paddingLeft: 34, paddingTop: 8, paddingBottom: 8 }} />
+          </div>
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 32, flexWrap: 'wrap', background: S.white, padding: 20, borderRadius: 12, border: `1px solid ${S.border}` }}>
-        <select value={filters.specialty_id} onChange={e => setFilters({ ...filters, specialty_id: e.target.value })}
-          style={{ padding: '9px 14px', border: `1px solid ${S.border}`, borderRadius: 8, fontSize: 14, color: S.text, background: S.white, outline: 'none' }}>
-          <option value="">All specialties</option>
-          {specialties.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-        <select value={filters.is_available} onChange={e => setFilters({ ...filters, is_available: e.target.value })}
-          style={{ padding: '9px 14px', border: `1px solid ${S.border}`, borderRadius: 8, fontSize: 14, color: S.text, background: S.white, outline: 'none' }}>
-          <option value="">Any availability</option>
-          <option value="true">Available now</option>
-        </select>
-        <input type="number" placeholder="Min fee (£)" value={filters.min_fee}
-          onChange={e => setFilters({ ...filters, min_fee: e.target.value })}
-          style={{ padding: '9px 14px', border: `1px solid ${S.border}`, borderRadius: 8, fontSize: 14, width: 140, outline: 'none' }} />
-        <input type="number" placeholder="Max fee (£)" value={filters.max_fee}
-          onChange={e => setFilters({ ...filters, max_fee: e.target.value })}
-          style={{ padding: '9px 14px', border: `1px solid ${S.border}`, borderRadius: 8, fontSize: 14, width: 140, outline: 'none' }} />
-        {Object.values(filters).some(v => v !== '') && (
-          <button className="btn-ghost" onClick={() => setFilters({ specialty_id:'', is_available:'', min_fee:'', max_fee:'' })}>Clear</button>
-        )}
+          <select className="field-input" value={filters.specialty_id}
+            onChange={e => setFilters(f => ({ ...f, specialty_id: e.target.value }))}
+            style={{ flex: '0 1 170px', width: 'auto', paddingTop: 8, paddingBottom: 8 }}>
+            <option value="">All specialties</option>
+            {specialties.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+
+          <select className="field-input" value={filters.is_available}
+            onChange={e => setFilters(f => ({ ...f, is_available: e.target.value }))}
+            style={{ flex: '0 1 150px', width: 'auto', paddingTop: 8, paddingBottom: 8 }}>
+            <option value="">Any availability</option>
+            <option value="true">Available now</option>
+          </select>
+
+          <input className="field-input" type="number" placeholder="Min £"
+            value={filters.min_fee}
+            onChange={e => setFilters(f => ({ ...f, min_fee: e.target.value }))}
+            style={{ flex: '0 1 90px', width: 'auto', paddingTop: 8, paddingBottom: 8 }} />
+
+          <input className="field-input" type="number" placeholder="Max £"
+            value={filters.max_fee}
+            onChange={e => setFilters(f => ({ ...f, max_fee: e.target.value }))}
+            style={{ flex: '0 1 90px', width: 'auto', paddingTop: 8, paddingBottom: 8 }} />
+
+          {hasFilters && (
+            <button className="btn btn-ghost"
+              onClick={() => setFilters({ search:'', specialty_id:'', is_available:'', min_fee:'', max_fee:'' })}
+              style={{ padding: '7px 14px', fontSize: 13, flexShrink: 0 }}>
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Doctor grid */}
-      {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}><Spinner /></div>
-      ) : doctors.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 80, color: S.muted }}>
-          <p style={{ fontSize: 48, marginBottom: 16 }}>👨‍⚕️</p>
-          <p style={{ fontSize: 18 }}>No doctors found</p>
-          <p style={{ fontSize: 14, marginTop: 8 }}>Try adjusting your filters or run the seed script</p>
+      {/* Page body */}
+      <div style={{ maxWidth: 1180, margin: '0 auto', padding: '36px 24px' }}>
+        <div style={{ marginBottom: 28 }}>
+          <div className="overline">Our network</div>
+          <h2 style={{ fontSize: 36, letterSpacing: '-1.5px', color: 'var(--text)' }}>Find a Doctor</h2>
         </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
-          {doctors.map((doc, i) => (
-            <div key={doc.id} className="card fade-up" style={{ padding: 24, animationDelay: `${i * 0.05}s` }}>
-              <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-                <div style={{
-                  width: 56, height: 56, borderRadius: '50%',
-                  background: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 22, flexShrink: 0,
-                }}>👨‍⚕️</div>
-                <div>
-                  <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 2 }}>
-                    Dr. {doc.first_name} {doc.last_name}
-                  </h3>
-                  <p style={{ color: S.muted, fontSize: 13 }}>{doc.qualification || 'General Practitioner'}</p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                    <Stars rating={doc.rating} />
-                    <span style={{ fontSize: 12, color: S.muted }}>({doc.total_reviews})</span>
+
+        {!loading && (
+          <p style={{ color: 'var(--text-sub)', fontSize: 14, marginBottom: 20 }}>
+            {visible.length} doctor{visible.length !== 1 ? 's' : ''} found
+          </p>
+        )}
+
+        {loading ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 16 }}>
+            {Array(6).fill(0).map((_, i) => <DoctorSkeleton key={i} />)}
+          </div>
+        ) : visible.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '80px 24px' }}>
+            <div style={{ fontSize: 56, marginBottom: 16 }}>👨‍⚕️</div>
+            <h3 style={{ fontSize: 20, marginBottom: 8, color: 'var(--text)' }}>No doctors found</h3>
+            <p style={{ color: 'var(--text-sub)', fontSize: 14 }}>Try adjusting your filters.</p>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 16 }}>
+            {visible.map((doc, i) => (
+              <div key={doc.id} className="surface lift fadeUp"
+                style={{ padding: 24, cursor: 'pointer', animationDelay: `${i * .045}s`, display: 'flex', flexDirection: 'column' }}
+                onClick={() => { setSelectedDoctor(doc); setPage('doctor-profile'); }}>
+
+                {/* Fee badge — top right */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flex: 1, minWidth: 0 }}>
+                    <Avatar name={`${doc.first_name} ${doc.last_name}`} size={50} fontSize={18} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 2, lineHeight: 1.3, fontFamily: "'Plus Jakarta Sans',sans-serif", color: 'var(--text)' }}>
+                        Dr. {doc.first_name} {doc.last_name}
+                      </h3>
+                      <p style={{ fontSize: 12, color: 'var(--text-sub)', marginBottom: 5 }}>
+                        {doc.qualification || 'General Practitioner'}
+                      </p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <Stars rating={doc.rating} />
+                        <span style={{ fontSize: 11, color: 'var(--text-mute)' }}>({doc.total_reviews})</span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Fee — prominent top right */}
+                  <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 8 }}>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)', fontFamily: "'Plus Jakarta Sans',sans-serif", letterSpacing: '-1px' }}>
+                      £{parseFloat(doc.consultation_fee || 0).toFixed(0)}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--text-mute)', textTransform: 'uppercase', letterSpacing: '.04em' }}>per visit</div>
                   </div>
                 </div>
+
+                {/* Tags */}
+                <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+                  <Badge bg="var(--accent-l)" color="var(--accent)">{doc.experience_years} yrs</Badge>
+                  {doc.is_available
+                    ? <Badge bg="var(--success-l)" color="var(--success)" dot>Available</Badge>
+                    : <Badge bg="var(--surface2)" color="var(--text-mute)">Unavailable</Badge>}
+                </div>
+
+                {doc.bio && (
+                  <p style={{ fontSize: 13, color: 'var(--text-sub)', lineHeight: 1.65, marginBottom: 16, flex: 1 }}>
+                    {doc.bio.length > 88 ? doc.bio.slice(0, 88) + '…' : doc.bio}
+                  </p>
+                )}
+
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 'auto', display: 'flex', justifyContent: 'flex-end' }}>
+                  <span style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 600, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>View profile →</span>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-                <Badge color={S.accent}>{doc.experience_years} yrs exp</Badge>
-                {doc.is_available
-                  ? <Badge color={S.success}>Available</Badge>
-                  : <Badge color={S.danger}>Unavailable</Badge>}
-              </div>
-              {doc.bio && <p style={{ color: S.muted, fontSize: 13, marginBottom: 16, lineHeight: 1.5 }}>{doc.bio.slice(0, 100)}{doc.bio.length > 100 ? '...' : ''}</p>}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 20, fontWeight: 800, color: S.accent }}>£{doc.consultation_fee}</span>
-                <button className="btn-primary" style={{ padding: '8px 18px', fontSize: 13 }}
-                  onClick={() => { setSelectedDoctor(doc); setPage('doctor-profile'); }}>
-                  View Profile
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-/* ─── Doctor profile page ────────────────────────────────────────────────── */
+/* ─── Doctor profile ─────────────────────────────────────────────────────── */
 function DoctorProfilePage({ doctor, setPage }) {
   const { user } = useAuth();
   const toast    = useToast();
   const [slots, setSlots]     = useState([]);
   const [reviews, setReviews] = useState([]);
+  const [tab, setTab]         = useState('about');
 
   useEffect(() => {
     if (!doctor) return;
@@ -658,152 +1056,186 @@ function DoctorProfilePage({ doctor, setPage }) {
 
   if (!doctor) return null;
 
-  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: '40px 24px' }}>
-      <button className="btn-ghost" onClick={() => setPage('doctors')} style={{ marginBottom: 24 }}>
-        ← Back to doctors
+    <div className="pageIn" style={{ maxWidth: 980, margin: '0 auto', padding: '40px 24px' }}>
+      <button className="btn btn-ghost" onClick={() => setPage('doctors')}
+        style={{ marginBottom: 24, padding: '8px 16px', fontSize: 13 }}>
+        ← Back to results
       </button>
 
-      {/* Profile header */}
-      <div className="card" style={{ padding: 32, marginBottom: 24, display: 'flex', gap: 28, alignItems: 'flex-start' }}>
-        <div style={{
-          width: 100, height: 100, borderRadius: '50%',
-          background: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 48, flexShrink: 0,
-        }}>👨‍⚕️</div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 4 }}>Dr. {doctor.first_name} {doctor.last_name}</h2>
-          <p style={{ color: S.muted, marginBottom: 8 }}>{doctor.qualification}</p>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-            <Badge color={S.accent}>{doctor.experience_years} years experience</Badge>
-            {doctor.is_available ? <Badge color={S.success}>Available</Badge> : <Badge color={S.danger}>Unavailable</Badge>}
-            {doctor.languages && <Badge color={S.warn}>{doctor.languages}</Badge>}
+      {/* Profile hero */}
+      <div className="surface-lg" style={{ padding: 36, marginBottom: 18, boxShadow: 'var(--shadow-md)' }}>
+        <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <Avatar name={`${doctor.first_name} ${doctor.last_name}`} size={96} fontSize={36} />
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <h2 style={{ fontSize: 32, letterSpacing: '-1.5px', marginBottom: 4, color: 'var(--text)' }}>
+              Dr. {doctor.first_name} {doctor.last_name}
+            </h2>
+            <p style={{ color: 'var(--text-sub)', marginBottom: 14, fontSize: 16 }}>{doctor.qualification}</p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+              <Badge bg="var(--accent-l)" color="var(--accent)">{doctor.experience_years} yrs experience</Badge>
+              {doctor.is_available
+                ? <Badge bg="var(--success-l)" color="var(--success)" dot>Available</Badge>
+                : <Badge bg="var(--surface2)" color="var(--text-mute)">Unavailable</Badge>}
+              {doctor.languages && <Badge bg="var(--warn-l)" color="var(--warn)">{doctor.languages}</Badge>}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Stars rating={doctor.rating} />
+              <span style={{ color: 'var(--text-sub)', fontSize: 14 }}>
+                {doctor.rating.toFixed(1)} · {doctor.total_reviews} reviews
+              </span>
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Stars rating={doctor.rating} />
-            <span style={{ color: S.muted, fontSize: 14 }}>{doctor.rating.toFixed(1)} ({doctor.total_reviews} reviews)</span>
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <div style={{ fontFamily: "'Plus Jakarta Sans',sans-serif", fontSize: 44, fontWeight: 800, color: 'var(--text)', lineHeight: 1, letterSpacing: '-2px' }}>
+              £{parseFloat(doctor.consultation_fee || 0).toFixed(0)}
+            </div>
+            <div style={{ color: 'var(--text-mute)', fontSize: 13, marginBottom: 16 }}>per consultation</div>
+            <button className="btn btn-primary" style={{ padding: '12px 28px', borderRadius: 10 }}
+              onClick={() => user ? toast('Appointment booking coming soon!') : setPage('login')}>
+              Book appointment
+            </button>
           </div>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <p style={{ fontSize: 32, fontWeight: 800, color: S.accent }}>£{doctor.consultation_fee}</p>
-          <p style={{ color: S.muted, fontSize: 13 }}>per consultation</p>
-          <button className="btn-primary" style={{ marginTop: 12 }}
-            onClick={() => { if (!user) { setPage('login'); } else { toast('Appointment booking coming in Week 2!'); } }}>
-            Book Appointment
-          </button>
         </div>
       </div>
 
-      {/* Bio */}
-      {doctor.bio && (
-        <div className="card" style={{ padding: 24, marginBottom: 24 }}>
-          <h3 style={{ fontSize: 18, marginBottom: 12 }}>About</h3>
-          <p style={{ color: S.muted, lineHeight: 1.7 }}>{doctor.bio}</p>
-        </div>
-      )}
+      {/* Tabs */}
+      <div className="tab-bar" style={{ marginBottom: 18 }}>
+        {[['about','About'],['availability','Availability'],['reviews',`Reviews${reviews.length ? ` (${reviews.length})` : ''}`]].map(([k,l]) => (
+          <button key={k} className={`tab${tab===k?' active':''}`} onClick={() => setTab(k)}>{l}</button>
+        ))}
+      </div>
 
-      {/* Availability */}
-      {slots.length > 0 && (
-        <div className="card" style={{ padding: 24, marginBottom: 24 }}>
-          <h3 style={{ fontSize: 18, marginBottom: 16 }}>Availability</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {slots.map(slot => (
-              <div key={slot.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${S.border}` }}>
-                <span style={{ fontWeight: 600 }}>{days[slot.day_of_week]}</span>
-                <span style={{ color: S.muted }}>{slot.start_time} — {slot.end_time}</span>
-                <Badge color={S.accent}>{slot.slot_duration} min slots</Badge>
+      {/* Tab content */}
+      <div className="surface-lg fadeIn" style={{ padding: 28 }}>
+        {tab === 'about' && (
+          <>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 14, color: 'var(--text)', fontFamily: "'Plus Jakarta Sans',sans-serif" }}>About</h3>
+            <p style={{ color: 'var(--text-sub)', lineHeight: 1.8, fontSize: 15 }}>{doctor.bio || 'No biography provided.'}</p>
+            {doctor.clinic_address && (
+              <div style={{ marginTop: 20, padding: 16, background: 'var(--surface2)', borderRadius: 10 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-mute)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Location</p>
+                <p style={{ fontSize: 14, color: 'var(--text)' }}>📍 {doctor.clinic_address}</p>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Reviews */}
-      <div className="card" style={{ padding: 24 }}>
-        <h3 style={{ fontSize: 18, marginBottom: 16 }}>Patient Reviews</h3>
-        {reviews.length === 0 ? (
-          <p style={{ color: S.muted }}>No reviews yet.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {reviews.map(r => (
-              <div key={r.id} style={{ paddingBottom: 16, borderBottom: `1px solid ${S.border}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <Stars rating={r.rating} />
-                  <span style={{ color: S.muted, fontSize: 12 }}>{new Date(r.created_at).toLocaleDateString()}</span>
+            )}
+          </>
+        )}
+        {tab === 'availability' && (
+          <>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, color: 'var(--text)', fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Weekly schedule</h3>
+            {slots.length === 0
+              ? <p style={{ color: 'var(--text-sub)' }}>No availability set yet.</p>
+              : slots.map(s => (
+                <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'var(--surface2)', borderRadius: 10, marginBottom: 8 }}>
+                  <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)', fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{days[s.day_of_week]}</span>
+                  <span style={{ color: 'var(--text-sub)', fontSize: 14 }}>{s.start_time} – {s.end_time}</span>
+                  <Badge bg="var(--accent-l)" color="var(--accent)">{s.slot_duration} min</Badge>
                 </div>
-                {r.comment && <p style={{ color: S.text, fontSize: 14 }}>{r.comment}</p>}
-              </div>
-            ))}
-          </div>
+              ))}
+          </>
+        )}
+        {tab === 'reviews' && (
+          <>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, color: 'var(--text)', fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Patient reviews</h3>
+            {reviews.length === 0
+              ? <p style={{ color: 'var(--text-sub)' }}>No reviews yet.</p>
+              : reviews.map(r => (
+                <div key={r.id} style={{ paddingBottom: 16, borderBottom: '1px solid var(--border)', marginBottom: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <Stars rating={r.rating} />
+                    <span style={{ color: 'var(--text-mute)', fontSize: 12 }}>{new Date(r.created_at).toLocaleDateString()}</span>
+                  </div>
+                  {r.comment && <p style={{ color: 'var(--text)', fontSize: 14, lineHeight: 1.65 }}>{r.comment}</p>}
+                </div>
+              ))}
+          </>
         )}
       </div>
     </div>
   );
 }
 
-/* ─── Dashboard page ─────────────────────────────────────────────────────── */
+/* ─── Dashboard ──────────────────────────────────────────────────────────── */
 function DashboardPage({ setPage }) {
   const { user } = useAuth();
-  const toast    = useToast();
-
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '40px 24px' }}>
-      <h2 style={{ fontSize: 32, marginBottom: 6 }}>Dashboard</h2>
-      <p style={{ color: S.muted, marginBottom: 36 }}>Welcome back, {user?.email}</p>
+    <div className="pageIn" style={{ maxWidth: 1040, margin: '0 auto', padding: '48px 24px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 40 }}>
+        <div>
+          <div className="overline">Your dashboard</div>
+          <h2 style={{ fontSize: 36, letterSpacing: '-1.5px', color: 'var(--text)' }}>
+            Hello, {user?.email.split('@')[0]} 👋
+          </h2>
+          <p style={{ color: 'var(--text-sub)', marginTop: 4 }}>Here's your health overview.</p>
+        </div>
+        <button className="btn btn-primary" onClick={() => setPage('doctors')} style={{ padding: '11px 24px' }}>
+          + Book appointment
+        </button>
+      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20, marginBottom: 36 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14, marginBottom: 32 }}>
         {[
-          { label: 'Upcoming Appointments', value: '0',   icon: '📅', color: S.accent },
-          { label: 'Past Appointments',      value: '0',   icon: '✅', color: S.success },
-          { label: 'Pending Payments',       value: '£0',  icon: '💳', color: S.warn },
-        ].map(stat => (
-          <div key={stat.label} className="card" style={{ padding: 24, display: 'flex', gap: 16, alignItems: 'center' }}>
-            <div style={{ fontSize: 36 }}>{stat.icon}</div>
-            <div>
-              <p style={{ fontSize: 28, fontWeight: 800, color: stat.color }}>{stat.value}</p>
-              <p style={{ color: S.muted, fontSize: 13 }}>{stat.label}</p>
+          { label:'Upcoming',  value:'0',  unit:'appointments', icon:'📅', color:'var(--accent)',  bg:'var(--accent-l)'  },
+          { label:'Completed', value:'0',  unit:'visits',       icon:'✅', color:'var(--success)', bg:'var(--success-l)' },
+          { label:'Pending',   value:'£0', unit:'payments',     icon:'💳', color:'var(--warn)',    bg:'var(--warn-l)'    },
+        ].map(s => (
+          <div key={s.label} className="surface" style={{ padding: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text-mute)', fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{s.label}</span>
+              <span style={{ fontSize: 20 }}>{s.icon}</span>
             </div>
+            <div style={{ fontSize: 40, fontWeight: 800, color: s.color, fontFamily: "'Plus Jakarta Sans',sans-serif", letterSpacing: '-2px', lineHeight: 1 }}>{s.value}</div>
+            <div style={{ fontSize: 13, color: 'var(--text-mute)', marginTop: 6 }}>{s.unit}</div>
           </div>
         ))}
       </div>
 
-      <div className="card" style={{ padding: 32, textAlign: 'center' }}>
-        <p style={{ fontSize: 48, marginBottom: 16 }}>📅</p>
-        <h3 style={{ fontSize: 20, marginBottom: 8 }}>No appointments yet</h3>
-        <p style={{ color: S.muted, marginBottom: 24 }}>Book your first appointment with a doctor</p>
-        <button className="btn-primary" onClick={() => setPage('doctors')}>Find a Doctor</button>
+      <div className="surface-lg" style={{ padding: 48, textAlign: 'center' }}>
+        <div style={{ fontSize: 56, marginBottom: 16 }}>🩺</div>
+        <h3 style={{ fontSize: 22, fontWeight: 700, marginBottom: 10, color: 'var(--text)', fontFamily: "'Plus Jakarta Sans',sans-serif" }}>No appointments yet</h3>
+        <p style={{ color: 'var(--text-sub)', marginBottom: 28, maxWidth: 360, margin: '0 auto 28px', lineHeight: 1.7 }}>
+          Find a doctor and book your first appointment in under a minute.
+        </p>
+        <button className="btn btn-primary" onClick={() => setPage('doctors')} style={{ padding: '12px 32px', borderRadius: 10 }}>
+          Browse doctors
+        </button>
       </div>
     </div>
   );
 }
 
-/* ─── Root App ───────────────────────────────────────────────────────────── */
+/* ─── Root ───────────────────────────────────────────────────────────────── */
 export default function App() {
-  const [page, setPage]                   = useState('home');
-  const [selectedDoctor, setSelectedDoctor] = useState(null);
+  const [page, setPage]             = useState('home');
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [filters, setFilters]       = useState({
+    search: '', specialty_id: '', is_available: '', min_fee: '', max_fee: '',
+  });
 
-  const renderPage = () => {
+  const screen = () => {
     switch (page) {
-      case 'login':          return <AuthPage mode="login"    setPage={setPage} />;
-      case 'register':       return <AuthPage mode="register" setPage={setPage} />;
-      case 'forgot-password':return <ForgotPasswordPage        setPage={setPage} />;
-      case 'reset-password': return <ResetPasswordPage         setPage={setPage} />;
-      case 'doctors':        return <DoctorsPage setPage={setPage} setSelectedDoctor={setSelectedDoctor} />;
-      case 'doctor-profile': return <DoctorProfilePage doctor={selectedDoctor} setPage={setPage} />;
-      case 'dashboard':      return <DashboardPage setPage={setPage} />;
-      default:               return <HomePage setPage={setPage} />;
+      case 'login':           return <AuthPage mode="login"    setPage={setPage} />;
+      case 'register':        return <AuthPage mode="register" setPage={setPage} />;
+      case 'forgot-password': return <ForgotPasswordPage       setPage={setPage} />;
+      case 'reset-password':  return <ResetPasswordPage        setPage={setPage} />;
+      case 'doctors':         return <DoctorsPage setPage={setPage} setSelectedDoctor={setSelectedDoc} filters={filters} setFilters={setFilters} />;
+      case 'doctor-profile':  return <DoctorProfilePage doctor={selectedDoc} setPage={setPage} />;
+      case 'dashboard':       return <DashboardPage setPage={setPage} />;
+      default:                return <HomePage setPage={setPage} setFilters={setFilters} />;
     }
   };
 
   return (
-    <ToastProvider>
-      <AuthProvider>
-        <style>{globalCSS}</style>
-        <Navbar page={page} setPage={setPage} />
-        <main>{renderPage()}</main>
-      </AuthProvider>
-    </ToastProvider>
+    <ThemeProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <style>{BASE_CSS}</style>
+          <Navbar page={page} setPage={setPage} />
+          <main>{screen()}</main>
+        </AuthProvider>
+      </ToastProvider>
+    </ThemeProvider>
   );
 }
