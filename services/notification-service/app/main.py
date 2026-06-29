@@ -8,7 +8,7 @@ from app.config import settings
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("notification_service_starting")
-    logger.info(f"notification_service_ready port={settings.port} mode={settings.environment}")
+    logger.info(f"notification_service_ready port={settings.port}")
     yield
     logger.info("notification_service_stopped")
 

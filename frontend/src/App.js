@@ -102,6 +102,10 @@ a{color:var(--accent);text-decoration:none}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:99px}
 
+/* ── Hide scrollbar on specialty row ── */
+.spec-scroll{overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+.spec-scroll::-webkit-scrollbar{display:none}
+
 /* ── Animations ── */
 @keyframes fadeUp    {from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
 @keyframes fadeIn    {from{opacity:0}to{opacity:1}}
@@ -651,16 +655,26 @@ function HomePage({ setPage, setFilters: setGlobalFilters }) {
         <p style={{ color: 'var(--text-sub)', marginBottom: 40, fontSize: 16 }}>
           {display.length} specialties across our verified network.
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(144px,1fr))', gap: 12 }}>
+        {/* Horizontal scroll — single row, no wrapping */}
+        <div style={{
+          display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8,
+          scrollbarWidth: 'none', msOverflowStyle: 'none',
+          WebkitOverflowScrolling: 'touch',
+        }}>
           {display.map((s, i) => (
-            <div key={s.id} className="surface lift fadeUp"
+            <div key={s.id} className="surface lift"
               onClick={() => setPage('doctors')}
-              style={{ padding: '22px 14px', textAlign: 'center', cursor: 'pointer', animationDelay: `${i * .035}s` }}>
+              style={{
+                padding: '22px 20px', textAlign: 'center', cursor: 'pointer',
+                flexShrink: 0, minWidth: 130,
+                transition: 'transform .2s ease, box-shadow .2s ease',
+              }}>
               <div style={{ fontSize: 28, marginBottom: 10 }}>{icons[s.name] || '🏥'}</div>
-              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', lineHeight: 1.3, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>{s.name}</p>
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', lineHeight: 1.3, fontFamily: "'Plus Jakarta Sans',sans-serif", whiteSpace: 'nowrap' }}>{s.name}</p>
             </div>
           ))}
         </div>
+        <style>{'.spec-scroll::-webkit-scrollbar{display:none}'}</style>
       </section>
 
       {/* ── How it works ── */}
